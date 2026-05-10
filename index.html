@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frayme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <img src="/logo.svg" alt="Frayme" style="height:36px;width:auto;display:block">
+  </div>
+  <div>
+    <h1>Frayme</h1>
+    <p style="font-size:12px;color:var(--text3);margin-top:2px">Detect partial &amp; corrupt videos</p>
+  </div>
+  <div class="spacer"></div>
+  <div class="badge" id="ffmpeg-badge">checking ffmpeg…</div>
+</header>
+
+<main>
+  <!-- ffmpeg missing modal -->
+  <div class="browse-overlay" id="ffmpeg-overlay">
+    <div class="browse-modal" style="width:520px;max-height:none">
+      <div class="browse-top">
+        <h3 style="color:var(--red)">ffmpeg not found</h3>
+        <button class="btn-outline" onclick="document.getElementById('ffmpeg-overlay').classList.remove('open')" style="padding:4px 10px;font-size:12px">Dismiss</button>
+      </div>
+      <div style="padding:20px 24px;line-height:1.7;font-size:13px;color:var(--text2)">
+        <p style="margin-bottom:16px">ffmpeg is required for video recovery. Scanning and analysis work without it, but you won't be able to recover damaged files.</p>
+
+        <div class="ffmpeg-step">
+          <div class="ffmpeg-step-num">1</div>
+          <div>
+            <div style="color:var(--text);font-weight:600;margin-bottom:4px">Install ffmpeg</div>
+            <p style="margin-bottom:8px">Download and install ffmpeg for macOS:</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener" class="btn-primary" style="text-decoration:none;display:inline-block">ffmpeg.org/download &rarr;</a>
+              <span style="line-height:2;color:var(--text3);font-size:12px">or via Homebrew:</span>
+              <code class="ffmpeg-code">brew install ffmpeg</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="ffmpeg-step" style="margin-top:20px">
+          <div class="ffmpeg-step-num">2</div>
+          <div>
+            <div style="color:var(--text);font-weight:600;margin-bottom:4px">If already installed, update your PATH</div>
+            <p style="margin-bottom:8px">Frayme couldn't find ffmpeg on your PATH. If you've already installed it in a non-standard location, add it to your shell profile:</p>
+            <code class="ffmpeg-code" style="display:block;margin-bottom:6px">export PATH="/path/to/ffmpeg/bin:$PATH"</code>
+            <p style="font-size:12px;color:var(--text3)">Add that line to <code style="font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px">~/.zshrc</code> or <code style="font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px">~/.bash_profile</code>, then restart Frayme.</p>
+          </div>
+        </div>
+
+        <div class="ffmpeg-step" style="margin-top:20px">
+          <div class="ffmpeg-step-num">3</div>
+          <div>
+            <div style="color:var(--text);font-weight:600;margin-bottom:4px">Restart Frayme</div>
+            <p>After installing or updating your PATH, stop and restart <code style="font-size:11px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px">python3 app.py</code> — the ffmpeg badge will turn green.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scan-card">
+    <label for="dir-input">Root Directory to Scan</label>
+    <div class="input-row">
+      <input type="text" id="dir-input"
+             placeholder="/Volumes/MyDrive/Videos  or  ~/Movies"
+             autocomplete="off" spellcheck="false">
+      <button class="btn-outline" onclick="openBrowse()">Browse</button>
+      <button class="btn-primary" id="scan-btn" onclick="startScan()">Scan Directory</button>
+      <button class="btn-danger" id="cancel-btn" onclick="cancelScan()" disabled>Cancel</button>
+    </div>
+    <div id="mount-status" class="mount-status" style="display:none"></div>
+  </div>
+
+  <div class="browse-overlay" id="browse-overlay" onclick="if(event.target===this)closeBrowse()">
+    <div class="browse-modal">
+      <div class="browse-top">
+        <h3>Choose Directory</h3>
+        <button class="btn-outline" onclick="closeBrowse()" style="padding:4px 10px;font-size:12px">Close</button>
+      </div>
+      <div class="browse-breadcrumb" id="browse-breadcrumb"></div>
+      <div class="browse-list" id="browse-list"></div>
+      <div class="browse-bottom">
+        <button class="btn-outline" onclick="closeBrowse()">Cancel</button>
+        <button class="btn-primary" onclick="selectBrowseDir()">Select This Directory</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="progress-section">
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="p-bar"></div>
+    </div>
+    <div class="current-file" id="p-current">Starting…</div>
+    <div class="progress-stats">
+      Scanned <span id="p-scanned">0</span> / <span id="p-total">?</span>
+      &nbsp;·&nbsp; Issues <span id="p-issues">0</span>
+      &nbsp;·&nbsp; <span id="p-pct"></span>
+    </div>
+  </div>
+
+  <div id="summary-bar">
+    <div class="scard amber">
+      <div class="sc-label">Total Issues</div>
+      <div class="sc-val" id="s-total">0</div>
+    </div>
+    <div class="scard orange">
+      <div class="sc-label">No Moov</div>
+      <div class="sc-val" id="s-no-moov">0</div>
+    </div>
+    <div class="scard red">
+      <div class="sc-label">Corrupt</div>
+      <div class="sc-val" id="s-corrupt">0</div>
+    </div>
+    <div class="scard amber">
+      <div class="sc-label">Truncated</div>
+      <div class="sc-val" id="s-truncated">0</div>
+    </div>
+    <div class="scard grey">
+      <div class="sc-label">Empty</div>
+      <div class="sc-val" id="s-empty">0</div>
+    </div>
+    <div class="scard green">
+      <div class="sc-label">Total Scanned</div>
+      <div class="sc-val" id="s-scanned">0</div>
+    </div>
+  </div>
+
+  <div id="export-bar">
+    <span class="export-label">Export scan results</span>
+    <button class="btn-outline" onclick="exportData('csv')">Export CSV</button>
+  </div>
+
+  <div id="results-section">
+    <div class="results-header">
+      <h2>Results by Folder</h2>
+      <div id="filter-bar">
+        <button class="filter-pill active" onclick="setFilter(this,'all')">All</button>
+        <button class="filter-pill" onclick="setFilter(this,'no_moov')">No Moov</button>
+        <button class="filter-pill" onclick="setFilter(this,'corrupt')">Corrupt</button>
+        <button class="filter-pill" onclick="setFilter(this,'truncated')">Truncated</button>
+        <button class="filter-pill" onclick="setFilter(this,'empty')">Empty</button>
+        <button class="filter-pill" onclick="setFilter(this,'error')">Error</button>
+      </div>
+    </div>
+    <div id="folder-list"></div>
+  </div>
+
+  <div id="empty-results">No issues found matching this filter.</div>
+
+  <div class="legend">
+    <div class="legend-item"><span class="status-dot dot-no_moov"></span> No moov — missing metadata index</div>
+    <div class="legend-item"><span class="status-dot dot-corrupt"></span> Corrupt — invalid or zeroed structure</div>
+    <div class="legend-item"><span class="status-dot dot-truncated"></span> Truncated — file cut short</div>
+    <div class="legend-item"><span class="status-dot dot-empty"></span> Empty — zero bytes</div>
+    <div class="legend-item"><span class="status-dot dot-error"></span> Error — could not read file</div>
+  </div>
+  <div id="queue-panel">
+    <div class="queue-header" onclick="this.parentElement.classList.toggle('collapsed')">
+      <span class="queue-title">Recovery Queue</span>
+      <span id="queue-counts" class="queue-counts"></span>
+      <button class="btn-outline queue-clear-btn" onclick="event.stopPropagation();clearCompletedJobs()">Clear Done</button>
+      <span class="queue-collapse-icon">&#x25BC;</span>
+    </div>
+    <div id="queue-body" class="queue-body"></div>
+  </div>
+</main>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
