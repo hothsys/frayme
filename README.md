@@ -1,8 +1,7 @@
-# Frayme
+# <img src="logo.svg" width="75" valign="bottom" hspace="0" /> &nbsp;&nbsp;Frayme
 
 A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.
 
-![Python 3](https://img.shields.io/badge/python-3.7%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## What It Does
@@ -92,7 +91,7 @@ For files with zeroed-out headers, Frayme tries multiple strategies in order:
 ## Project Structure
 
 ```
-video-integrity-scanner/
+frayme/
   app.py        # Server, scanner, and recovery engine
   index.html    # Web UI
   logo.svg      # App logo
@@ -111,10 +110,12 @@ Zero build step. No npm, no pip, no bundler.
 - Files with corrupted mdat (actual video data damage) will have gaps at keyframe boundaries
 - Multi-mode cameras (e.g., GoPro 4K and 1080p) require SPS probing to match the correct resolution
 
-## Built With
-
-This project was built with [Claude Code](https://claude.ai/code).
+Built with [Claude Code](https://claude.ai/code).
 
 ## License
 
 MIT
+
+---
+
+Built with [Claude Code](https://claude.ai/claude-code) using Claude Opus 4.6
