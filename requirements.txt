@@ -1,0 +1,1 @@
+# Frayme - no pip dependencies (stdlib only)
