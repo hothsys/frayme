@@ -149,10 +149,6 @@ The web header picks up the new `logo.svg` immediately; the icons only change af
 - Files with corrupted mdat (actual video data damage) will have gaps at keyframe boundaries
 - Multi-mode cameras (e.g., GoPro 4K and 1080p) require SPS probing to match the correct resolution
 
-## Built With
-
-This project was built with [Claude Code](https://claude.ai/code).
-
 ## License
 
 MIT
