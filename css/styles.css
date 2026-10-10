@@ -167,6 +167,7 @@
     transition: border-color .15s;
   }
   .input-row input:focus { border-color: var(--blue); }
+  .input-row input:disabled { opacity: .5; cursor: default; }
   .btn-primary {
     background: var(--blue);
     color: #fff;
@@ -193,6 +194,7 @@
     transition: border-color .15s, color .15s;
   }
   .btn-outline:hover { border-color: var(--text2); color: var(--text); }
+  .btn-outline:disabled { opacity: .45; cursor: default; pointer-events: none; }
   .btn-danger {
     background: var(--red-dim);
     color: var(--red);
@@ -285,6 +287,15 @@
     border-radius: 3px;
     transition: width .3s ease;
   }
+  /* Counting phase: total unknown, so show motion instead of a percentage */
+  .progress-bar-track.indeterminate .progress-bar-fill {
+    width: 30% !important;
+    animation: progress-indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes progress-indeterminate {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(340%); }
+  }
   .current-file {
     font-family: var(--mono);
     font-size: 11px;
@@ -301,6 +312,8 @@
     color: var(--text2);
   }
   .progress-stats span { font-family: var(--mono); color: var(--text); }
+  .progress-counting { font-size: 12px; color: var(--text2); }
+  .progress-counting span { font-family: var(--mono); color: var(--text); }
 
   /* ── Summary bar ── */
   #summary-bar {
@@ -482,6 +495,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .issue-reason.recover-error { color: var(--red); }
 
   .issue-meta {
     font-family: var(--mono);
@@ -536,6 +550,14 @@
   }
   .recover-btn:hover { color: #f0cc66; border-color: #e6b43c; }
   .recover-btn:disabled { opacity: .5; cursor: default; }
+  /* The donor pool is incomplete until a scan finishes */
+  body.scanning .recover-btn { opacity: .5; pointer-events: none; }
+
+  #scan-notice {
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text3);
+  }
 
   /* ── Recovery result ── */
   .recovery-result {
@@ -675,6 +697,8 @@
     padding: 2px 8px;
     font-size: 10px;
   }
+  /* Keep hover for the "nothing to clear" tooltip */
+  .queue-clear-btn:disabled { pointer-events: auto; cursor: not-allowed; }
   .queue-collapse-icon {
     font-size: 10px;
     color: var(--text3);

@@ -124,15 +124,16 @@ function startScan() {
   document.getElementById('results-section').style.display = 'none';
   document.getElementById('empty-results').style.display   = 'none';
 
-  document.getElementById('scan-btn').disabled   = true;
-  document.getElementById('cancel-btn').disabled = false;
+  document.getElementById('scan-notice').style.display = 'none';
+  setScanControls(true);
   document.getElementById('progress-section').style.display = 'block';
   document.getElementById('p-bar').style.width   = '0%';
   document.getElementById('p-scanned').textContent = '0';
   document.getElementById('p-total').textContent   = '?';
   document.getElementById('p-issues').textContent  = '0';
   document.getElementById('p-pct').textContent      = '';
-  document.getElementById('p-current').textContent  = 'Starting…';
+  document.getElementById('p-current').textContent  = dir;
+  setCountingPhase(true);
 
   try { localStorage.setItem('lastVideoScanDir', dir); } catch(e) {}
 
@@ -154,10 +155,27 @@ function startScan() {
   };
 }
 
+function setCountingPhase(counting) {
+  document.getElementById('p-track').classList.toggle('indeterminate', counting);
+  document.getElementById('p-counting').style.display = counting ? 'block' : 'none';
+  document.getElementById('p-stats').style.display    = counting ? 'none' : 'flex';
+  if (counting) {
+    document.getElementById('p-found').textContent = '0';
+    document.getElementById('p-dirs').textContent  = '0';
+  }
+}
+
 function handleEvent(ev) {
   switch (ev.type) {
+    case 'counting':
+      document.getElementById('p-found').textContent   = ev.found.toLocaleString();
+      document.getElementById('p-dirs').textContent    = ev.dirs.toLocaleString();
+      document.getElementById('p-current').textContent = ev.current;
+      break;
     case 'total':
+      setCountingPhase(false);
       document.getElementById('p-total').textContent = ev.total;
+      document.getElementById('p-current').textContent = 'Checking files…';
       break;
     case 'scanning':
       document.getElementById('p-scanned').textContent = ev.scanned;
@@ -184,7 +202,7 @@ function handleEvent(ev) {
       scanDone(ev.scanned, ev.issues);
       break;
     case 'cancelled':
-      scanDone(ev.scanned, ev.issues);
+      scanDone(ev.scanned, ev.issues, true);
       break;
     case 'error':
       alert(ev.message);
@@ -291,11 +309,24 @@ function appendIssueRow(dir, ev) {
   body.insertAdjacentHTML('beforeend', buildIssueRowHtml(ev));
 }
 
-function scanDone(scanned, issues) {
+function scanDone(scanned, issues, wasCancelled) {
   if (eventSource) { eventSource.close(); eventSource = null; }
-  document.getElementById('scan-btn').disabled   = false;
-  document.getElementById('cancel-btn').disabled = true;
+  clearTimeout(cancelFallbackTimer);
+  setScanControls(false);
+  setCountingPhase(false);
   document.getElementById('progress-section').style.display = 'none';
+
+  if (wasCancelled) {
+    var total = document.getElementById('p-total').textContent;
+    var notice = document.getElementById('scan-notice');
+    notice.style.display = 'block';
+    if (total === '?') {
+      // Nothing was checked yet, so there are no results to summarize
+      notice.textContent = 'Scan cancelled while finding video files.';
+      return;
+    }
+    notice.textContent = 'Scan cancelled after ' + scanned + ' of ' + total + ' files. Results are partial.';
+  }
 
   // Count by status
   var counts = { no_moov: 0, corrupt: 0, truncated: 0, empty: 0, error: 0 };
@@ -313,20 +344,45 @@ function scanDone(scanned, issues) {
   document.getElementById('s-scanned').textContent   = scanned;
   document.getElementById('summary-bar').style.display = 'flex';
 
+  // Before the messages below, since it resets the empty-results text
+  applyFilter();
+
   if (issues > 0) {
     document.getElementById('export-bar').style.display = 'flex';
     document.getElementById('results-section').style.display = 'block';
   } else {
     document.getElementById('empty-results').style.display = 'block';
-    document.getElementById('empty-results').textContent = 'All ' + scanned + ' video files are intact.';
+    document.getElementById('empty-results').textContent = wasCancelled
+      ? 'No issues found in the ' + scanned + ' files checked before cancelling.'
+      : 'All ' + scanned + ' video files are intact.';
   }
-
-  applyFilter();
 }
 
+// While scanning, only Cancel is usable
+function setScanControls(scanning) {
+  document.getElementById('dir-input').disabled  = scanning;
+  document.getElementById('browse-btn').disabled = scanning;
+  document.getElementById('scan-btn').disabled   = scanning;
+  var cancelBtn = document.getElementById('cancel-btn');
+  cancelBtn.disabled = !scanning;
+  cancelBtn.textContent = 'Cancel';
+  document.body.classList.toggle('scanning', scanning);
+}
+
+var cancelFallbackTimer = null;
+
 function cancelScan() {
-  fetch('/api/cancel', { method: 'POST' });
-  document.getElementById('cancel-btn').disabled = true;
+  var cancelBtn = document.getElementById('cancel-btn');
+  cancelBtn.disabled = true;
+  cancelBtn.textContent = 'Cancelling…';
+  fetch('/api/cancel', { method: 'POST' }).catch(function() {});
+  // The server normally confirms within a moment; don't leave the UI stuck if it doesn't
+  cancelFallbackTimer = setTimeout(function() {
+    if (eventSource) {
+      scanDone(parseInt(document.getElementById('p-scanned').textContent) || 0,
+               parseInt(document.getElementById('p-issues').textContent) || 0, true);
+    }
+  }, 5000);
 }
 
 // ── Filtering ──
@@ -421,12 +477,15 @@ document.addEventListener('click', function(e) {
 });
 
 function recoverVideo(btn) {
+  if (document.body.classList.contains('scanning')) return;
   var filepath = btn.getAttribute('data-recover');
   var dir = filepath.substring(0, filepath.lastIndexOf('/'));
   var donor = donorMap[dir] || '';
 
   btn.textContent = 'Queuing…';
   btn.disabled = true;
+  var prevError = btn.closest('.issue-row').querySelector('.recover-error');
+  if (prevError) prevError.remove();
 
   var body = { filepath: filepath };
   if (donor) body.donor = donor;
@@ -475,9 +534,10 @@ function showQueuePanel() {
 }
 
 function startQueuePolling() {
-  if (queuePollTimer) return;
+  // Refresh right away even if polling is already running, so a newly
+  // queued job shows up immediately rather than on the next tick
   pollQueueStatus();
-  queuePollTimer = setInterval(pollQueueStatus, 2000);
+  if (!queuePollTimer) queuePollTimer = setInterval(pollQueueStatus, 2000);
 }
 
 function stopQueuePolling() {
@@ -493,15 +553,17 @@ function pollQueueStatus() {
     .then(function(d) {
       var jobs = d.jobs || [];
       updateQueuePanel(jobs);
-      updateInlineRows(jobs);
+      try {
+        updateInlineRows(jobs);
+      } catch (err) {
+        console.error('Updating result rows failed:', err);
+      }
       var active = jobs.some(function(j) {
         return j.status === 'queued' || j.status === 'recovering';
       });
-      if (!active && jobs.length > 0) {
-        stopQueuePolling();
-      }
+      if (!active) stopQueuePolling();
     })
-    .catch(function() {});
+    .catch(function(err) { console.error('Recovery status poll failed:', err); });
 }
 
 function updateQueuePanel(jobs) {
@@ -521,6 +583,12 @@ function updateQueuePanel(jobs) {
   if (counts.done) parts.push(counts.done + ' done');
   if (counts.failed) parts.push(counts.failed + ' failed');
   document.getElementById('queue-counts').textContent = parts.join(' · ');
+
+  var clearBtn = document.querySelector('.queue-clear-btn');
+  var finished = counts.done + counts.failed;
+  clearBtn.disabled = finished === 0;
+  clearBtn.title = finished ? 'Remove finished and failed jobs from this list'
+                            : 'Nothing has finished yet';
 
   body.innerHTML = jobs.map(function(job) {
     var statusClass;
@@ -554,8 +622,27 @@ function updateQueuePanel(jobs) {
   }).join('');
 }
 
+// Failed job ids already reflected in the UI. Failed jobs stay in the status
+// list, so without this an old failure would reset a later retry's button.
+var handledFailures = {};
+
+function showRecoverFailure(job) {
+  var btn = document.querySelector('[data-recover="' + CSS.escape(job.filepath) + '"]');
+  if (!btn) return;
+  btn.textContent = 'Retry Recovery';
+  btn.disabled = false;
+  var info = btn.closest('.issue-row').querySelector('.issue-info');
+  var msg = 'Recovery failed: ' + (job.error || 'unknown error');
+  info.insertAdjacentHTML('beforeend',
+    '<div class="issue-reason recover-error" title="' + escHtml(msg) + '">' + escHtml(msg) + '</div>');
+}
+
 function updateInlineRows(jobs) {
   jobs.forEach(function(job) {
+    if (job.status === 'failed' && !handledFailures[job.id]) {
+      handledFailures[job.id] = true;
+      showRecoverFailure(job);
+    }
     if (job.status === 'done' && job.result && !recoveredFiles[job.filepath]) {
       recoveredFiles[job.filepath] = {
         size: job.result.size,
@@ -597,8 +684,15 @@ function updateInlineRows(jobs) {
 }
 
 function clearCompletedJobs() {
+  // Remove finished rows right away; the poll below syncs with the server
+  document.querySelectorAll('#queue-body .qs-done, #queue-body .qs-failed')
+    .forEach(function(el) { el.remove(); });
+  if (!document.querySelector('#queue-body .queue-item')) {
+    document.getElementById('queue-panel').style.display = 'none';
+  }
   fetch('/api/recover-queue-clear', { method: 'POST' })
-    .then(function() { pollQueueStatus(); });
+    .catch(function(err) { console.error('Clearing finished jobs failed:', err); })
+    .then(pollQueueStatus);
 }
 
 function setDonor(btn) {
