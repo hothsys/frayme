@@ -34,6 +34,7 @@ scan_state = {
     'running': False,
     'cancelled': False,
     'results': [],
+    'scan_id': 0,
 }
 
 # Per-directory donor map: { dir_path: filepath } (manual override)
@@ -972,11 +973,38 @@ def _check_avi(filepath, file_size, head, details):
     return 'ok', None, details
 
 
-def check_video(filepath):
+HEIF_IMAGE_BRANDS = {'heic', 'heix', 'heim', 'heis', 'mif1', 'mif2', 'avif'}
+
+
+def _is_heif_image(filepath, boxes, ftyp_brand):
+    """True if a moov-less ISO BMFF file is a HEIF/HEIC/AVIF still image.
+
+    Photos libraries can store still images under a .mov name. These share
+    the MP4 box layout (ftyp + meta + mdat) but have no moov by design.
+    """
+    if ftyp_brand in HEIF_IMAGE_BRANDS:
+        return True
+    # Fall back to the meta box's handler: 'pict' marks a still image
+    for bt, off, sz in boxes:
+        if bt == 'meta':
+            with open(filepath, 'rb') as f:
+                f.seek(off + 12)  # skip box header + FullBox version/flags
+                hdlr = f.read(20)
+            return hdlr[4:8] == b'hdlr' and hdlr[16:20] == b'pict'
+    return False
+
+
+class ScanCancelled(Exception):
+    pass
+
+
+def check_video(filepath, should_stop=None):
     """Check a video file for integrity issues.
 
     Returns (status, reason, details_dict).
-    Statuses: ok, no_moov, corrupt, truncated, empty, error
+    Statuses: ok, no_moov, corrupt, truncated, empty, error, not_video
+    should_stop: optional callable; when it returns True, the full-file read
+    loops raise ScanCancelled so a cancelled scan doesn't wait on large files.
     """
     details = {}
     try:
@@ -1001,14 +1029,14 @@ def check_video(filepath):
                 chunk_size = 65536
                 offset = 0
                 while offset < file_size:
+                    if should_stop and should_stop():
+                        raise ScanCancelled()
                     chunk = f.read(chunk_size)
                     if not chunk:
                         break
-                    for i, b in enumerate(chunk):
-                        if b != 0:
-                            zero_end = offset + i
-                            break
-                    if zero_end > 0:
+                    rest = chunk.lstrip(b'\x00')
+                    if rest:
+                        zero_end = offset + len(chunk) - len(rest)
                         break
                     offset += len(chunk)
 
@@ -1023,13 +1051,13 @@ def check_video(filepath):
             with open(filepath, 'rb') as f:
                 sample_pos = zero_end
                 while sample_pos < file_size:
+                    if should_stop and should_stop():
+                        raise ScanCancelled()
                     f.seek(sample_pos)
                     blk = f.read(65536)
                     if not blk:
                         break
-                    for b in blk:
-                        if b != 0:
-                            nonzero_bytes += 1
+                    nonzero_bytes += len(blk) - blk.count(0)
                     sample_pos += len(blk)
 
             zero_pct = zero_end / file_size * 100
@@ -1110,6 +1138,11 @@ def check_video(filepath):
                         details)
             return 'ok', None, details
 
+        if not has_moov and _is_heif_image(filepath, boxes, ftyp_brand):
+            return ('not_video',
+                    'HEIF/HEIC still image with a video file extension',
+                    details)
+
         if has_mdat and not has_moov:
             # Check if mdat content is mostly zeros (valid header but wiped data)
             mdat_data_start = mdat_offset + 8
@@ -1118,13 +1151,13 @@ def check_video(filepath):
                 sample_pos = mdat_data_start
                 mdat_end = mdat_offset + mdat_size
                 while sample_pos < mdat_end:
+                    if should_stop and should_stop():
+                        raise ScanCancelled()
                     f.seek(sample_pos)
                     blk = f.read(65536)
                     if not blk:
                         break
-                    for b in blk:
-                        if b != 0:
-                            nonzero_bytes += 1
+                    nonzero_bytes += len(blk) - blk.count(0)
                     sample_pos += len(blk)
 
             actual_mdat_data = mdat_size - 8
@@ -1163,6 +1196,8 @@ def check_video(filepath):
 
         return 'ok', None, details
 
+    except ScanCancelled:
+        raise
     except PermissionError:
         return 'error', 'Permission denied reading file', details
     except OSError as e:
@@ -2472,8 +2507,15 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
 
 # ─── Directory scanner ───────────────────────────────────────────────────────
 
-def scan_directory_gen(root_dir):
-    """Generator that scans a directory for video files and yields SSE events."""
+def scan_directory_gen(root_dir, scan_id=None):
+    """Generator that scans a directory for video files and yields SSE events.
+
+    Stops when the scan is cancelled or a newer scan (different scan_id) starts.
+    """
+
+    def cancelled():
+        return (scan_state['cancelled'] or
+                (scan_id is not None and scan_state.get('scan_id') != scan_id))
 
     if not os.path.exists(root_dir):
         yield {'type': 'error', 'message': f'Path does not exist: {root_dir}'}
@@ -2483,11 +2525,16 @@ def scan_directory_gen(root_dir):
         yield {'type': 'error', 'message': f'Not a directory: {root_dir}'}
         return
 
-    yield {'type': 'status', 'message': 'Counting video files…'}
+    yield {'type': 'counting', 'found': 0, 'dirs': 0, 'current': root_dir}
 
+    # Walking a large drive can take a while; report progress so the UI
+    # doesn't look stuck before the first file is checked
     all_files = []
+    dirs_walked = 0
+    last_report = time.time()
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        if scan_state['cancelled']:
+        if cancelled():
+            yield {'type': 'cancelled', 'scanned': 0, 'issues': 0}
             return
         dirnames[:] = [d for d in dirnames
                        if not d.startswith('.') and d != '__MACOSX']
@@ -2495,6 +2542,11 @@ def scan_directory_gen(root_dir):
             ext = os.path.splitext(fname)[1].lower()
             if ext in VIDEO_EXTS:
                 all_files.append(os.path.join(dirpath, fname))
+        dirs_walked += 1
+        if time.time() - last_report >= 0.25:
+            last_report = time.time()
+            yield {'type': 'counting', 'found': len(all_files),
+                   'dirs': dirs_walked, 'current': dirpath}
 
     total = len(all_files)
     yield {'type': 'total', 'total': total}
@@ -2509,31 +2561,34 @@ def scan_directory_gen(root_dir):
     batch_size = WORKER_THREADS * 4
 
     for batch_start in range(0, total, batch_size):
-        if scan_state['cancelled']:
+        if cancelled():
             yield {'type': 'cancelled', 'scanned': scanned, 'issues': issue_count}
             return
 
         batch = all_files[batch_start:batch_start + batch_size]
         futures = {}
 
-        with ThreadPoolExecutor(max_workers=WORKER_THREADS) as executor:
+        # Not a `with` block: its exit waits for every in-flight file, which
+        # made Cancel appear to hang on large files
+        executor = ThreadPoolExecutor(max_workers=WORKER_THREADS)
+        try:
             for fpath in batch:
-                if scan_state['cancelled']:
-                    break
-                fut = executor.submit(check_video, fpath)
+                fut = executor.submit(check_video, fpath, cancelled)
                 futures[fut] = fpath
 
             for fut in as_completed(futures):
-                if scan_state['cancelled']:
+                if cancelled():
                     break
 
                 fpath = futures[fut]
-                scanned += 1
 
                 try:
                     status, reason, details = fut.result()
+                except ScanCancelled:
+                    break
                 except Exception as e:
                     status, reason, details = 'error', str(e), {}
+                scanned += 1
 
                 fname = os.path.basename(fpath)
                 fdir = os.path.dirname(fpath)
@@ -2561,6 +2616,9 @@ def scan_directory_gen(root_dir):
                     'duration': file_duration,
                 }
 
+                if status == 'not_video':
+                    # Neither an issue nor usable as a recovery donor
+                    continue
                 if status != 'ok':
                     issue_count += 1
                     event = {
@@ -2578,6 +2636,15 @@ def scan_directory_gen(root_dir):
                     yield event
                 else:
                     donor_pool.setdefault(fdir, []).append(fpath)
+        finally:
+            # In-flight checks stop on their own via the cancelled() hook
+            for fut in futures:
+                fut.cancel()
+            executor.shutdown(wait=False)
+
+        if cancelled():
+            yield {'type': 'cancelled', 'scanned': scanned, 'issues': issue_count}
+            return
 
     elapsed = round(time.time() - start_time, 1)
     yield {'type': 'complete', 'scanned': scanned, 'issues': issue_count,
@@ -2792,6 +2859,9 @@ class FrameHandler(SimpleHTTPRequestHandler):
         if not root_dir:
             return self._send_json({'error': 'No directory specified'}, 400)
 
+        # A new id makes any still-running previous scan stop on its own
+        scan_state['scan_id'] += 1
+        scan_id = scan_state['scan_id']
         scan_state['cancelled'] = False
         scan_state['running'] = True
         scan_state['results'] = []
@@ -2805,7 +2875,7 @@ class FrameHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
         try:
-            for event in scan_directory_gen(root_dir):
+            for event in scan_directory_gen(root_dir, scan_id):
                 if event.get('type') == 'issue':
                     scan_state['results'].append(event)
                 line = f"data: {json.dumps(event, default=str)}\n\n"
@@ -2814,7 +2884,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
         except (ConnectionResetError, BrokenPipeError):
             pass
         finally:
-            scan_state['running'] = False
+            if scan_state['scan_id'] == scan_id:
+                scan_state['running'] = False
 
     def _handle_cancel(self):
         scan_state['cancelled'] = True

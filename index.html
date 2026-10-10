@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frayme</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -74,7 +76,7 @@
       <input type="text" id="dir-input"
              placeholder="/Volumes/MyDrive/Videos  or  ~/Movies"
              autocomplete="off" spellcheck="false">
-      <button class="btn-outline" onclick="openBrowse()">Browse</button>
+      <button class="btn-outline" id="browse-btn" onclick="openBrowse()">Browse</button>
       <button class="btn-primary" id="scan-btn" onclick="startScan()">Scan Directory</button>
       <button class="btn-danger" id="cancel-btn" onclick="cancelScan()" disabled>Cancel</button>
     </div>
@@ -97,16 +99,21 @@
   </div>
 
   <div id="progress-section">
-    <div class="progress-bar-track">
+    <div class="progress-bar-track" id="p-track">
       <div class="progress-bar-fill" id="p-bar"></div>
     </div>
     <div class="current-file" id="p-current">Starting…</div>
-    <div class="progress-stats">
+    <div class="progress-counting" id="p-counting" style="display:none">
+      Finding video files: <span id="p-found">0</span> found in <span id="p-dirs">0</span> folders
+    </div>
+    <div class="progress-stats" id="p-stats">
       Scanned <span id="p-scanned">0</span> / <span id="p-total">?</span>
       &nbsp;·&nbsp; Issues <span id="p-issues">0</span>
       &nbsp;·&nbsp; <span id="p-pct"></span>
     </div>
   </div>
+
+  <div id="scan-notice" style="display:none"></div>
 
   <div id="summary-bar">
     <div class="scard amber">
@@ -165,7 +172,7 @@
     <div class="legend-item"><span class="status-dot dot-error"></span> Error — could not read file</div>
   </div>
   <div id="queue-panel">
-    <div class="queue-header" onclick="this.parentElement.classList.toggle('collapsed')">
+    <div class="queue-header" onclick="if (!event.target.closest('.queue-clear-btn')) this.parentElement.classList.toggle('collapsed')">
       <span class="queue-title">Recovery Queue</span>
       <span id="queue-counts" class="queue-counts"></span>
       <button class="btn-outline queue-clear-btn" onclick="event.stopPropagation();clearCompletedJobs()">Clear Done</button>
