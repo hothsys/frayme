@@ -11,11 +11,11 @@ A web-based tool that recursively scans directories for corrupted video files an
 
 ## What It Does
 
-- **Scans** directories recursively for damaged video files (`.mp4`, `.mov`, `.m4v`, `.m4a`, `.3gp`, `.3g2`, `.avi`)
-- **Detects** missing moov atoms, leading-zero corruption, truncated files, empty files, and invalid container structures
-- **Recovers** files using raw H.264 NAL extraction with SPS/PPS probing, or moov transplant from a healthy donor file
-- **Auto-selects donors** by matching filename prefixes, so directories with mixed devices (GoPro, iPhone, Nikon) are handled
-- **Exports** scan results to CSV
+- Scans directories recursively for damaged video files (`.mp4`, `.mov`, `.m4v`, `.m4a`, `.3gp`, `.3g2`, `.avi`)
+- Detects missing moov atoms, leading-zero corruption, truncated files, empty files, and invalid container structures
+- Recovers files using raw H.264 NAL extraction with SPS/PPS probing, or moov transplant from a healthy donor file
+- Auto-selects donors by matching filename prefixes, so directories with mixed devices (GoPro, iPhone, Nikon) are handled
+- Exports scan results to CSV
 
 ## Requirements
 
@@ -96,7 +96,7 @@ When a video has raw media data (`mdat`) but is missing its metadata index (`moo
 
 1. Scans the mdat for length-prefixed H.264 NAL units
 2. Collects all unique SPS/PPS parameter sets from healthy files in the same directory
-3. **Probes each candidate** by test-decoding against the actual video data to find the correct resolution match
+3. Probes each candidate by test-decoding against the actual video data to find the correct resolution match
 4. Trims to the first IDR keyframe (skips orphaned P/B-frames that cause playback failures)
 5. Filters out zero-corrupted NALs and skips subsequent frames until the next keyframe
 6. Wraps the clean Annex-B stream with FFmpeg at the correct framerate
@@ -117,7 +117,7 @@ For files with zeroed-out headers, Frayme tries multiple strategies in order:
 ## Project Structure
 
 ```
-video-integrity-scanner/
+frayme/
   app.py            # Server, scanner, and recovery engine
   index.html        # Web UI
   logo.svg          # App logo (source for all icons)
@@ -131,16 +131,6 @@ video-integrity-scanner/
 ```
 
 Zero build step. No npm, no pip, no bundler.
-
-### Changing the Logo
-
-After replacing `logo.svg`, run this on a Mac to regenerate the app icon and browser icons:
-
-```sh
-launcher/build-app.sh
-```
-
-The web header picks up the new `logo.svg` immediately; the icons only change after this step. The rebuilt Frayme.app will ask for Downloads access again on its next launch. Browsers cache icons, so you may need to close and reopen the Frayme tab to see the new one.
 
 ## Limitations
 
