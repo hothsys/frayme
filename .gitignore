@@ -10,3 +10,6 @@ __pycache__/
 .frayme.log
 .frayme.pid
 .frayme.port
+
+AGENTS.MD
+CLAUDE.MD
