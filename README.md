@@ -39,7 +39,7 @@ Frayme runs as a local web server at `http://localhost:5901` and opens your brow
 Double-click **Frayme.app** in the project folder. Frayme starts in the background (no Terminal window) and your browser opens.
 
 - **First launch:** if macOS asks whether Frayme can access your Downloads folder or a removable volume, click **Allow**. Frayme needs this to scan your videos. If macOS blocks the app outright, right-click it, choose **Open**, and confirm.
-- **To stop it or reopen the browser:** double-click Frayme.app again. A dialog says Frayme is already running and offers **Open in Browser** or **Stop Frayme**.
+- **To stop it or reopen the browser:** double-click Frayme.app again. A dialog says Frayme is already running and offers **Open in Browser** or **Stop Frayme**. If you clone to another directory and launch from there, the app detects the running instance globally (via `app.conf` port setting) and shows the same dialog.
 - **Dock shortcut:** drag Frayme.app onto the Dock. Keep the app itself in the project folder, because it uses `frayme.sh` next to it.
 
 Prefer a visible log? Double-click **Frayme.command** instead; it runs Frayme in a Terminal window, and pressing Return there stops it. You can also use the `frayme.sh` commands below.
@@ -56,7 +56,7 @@ From the project folder:
 ./frayme.sh restart
 ```
 
-Add a port number to `start` or `restart` (e.g. `./frayme.sh start 8080`) to use a different port.
+Add a port number to `start` or `restart` (e.g. `./frayme.sh start 8080`) to use a different port. Alternatively, edit `app.conf` (`PORT=5901`) so Frayme.app and `frayme.sh` share the same setting.
 
 ### Windows
 
@@ -128,6 +128,7 @@ frayme/
   Frayme.app        # macOS double-click launcher (no Terminal window)
   Frayme.command    # macOS double-click launcher (Terminal window)
   launcher/         # Frayme.app source and icon generator
+  app.conf          # Port setting (default PORT=5901)
 ```
 
 Zero build step. No npm, no pip, no bundler.
