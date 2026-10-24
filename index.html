@@ -19,7 +19,7 @@
   </div>
   <div>
     <h1>Frayme</h1>
-    <p style="font-size:12px;color:var(--text3);margin-top:2px">Detect partial &amp; corrupt videos</p>
+    <p class="text-up" style="color:var(--text3);margin-top:2px">Detect partial &amp; corrupt videos</p>
   </div>
   <div class="spacer"></div>
   <div class="badge" id="ffmpeg-badge">checking ffmpeg…</div>
@@ -33,7 +33,7 @@
         <h3 style="color:var(--red)">ffmpeg not found</h3>
         <button class="btn-outline" onclick="document.getElementById('ffmpeg-overlay').classList.remove('open')" style="padding:4px 10px;font-size:12px">Dismiss</button>
       </div>
-      <div style="padding:20px 24px;line-height:1.7;font-size:13px;color:var(--text2)">
+      <div class="text-up" style="padding:20px 24px;line-height:1.7;color:var(--text2)">
         <p style="margin-bottom:16px">ffmpeg is required for video recovery. Scanning and analysis work without it, but you won't be able to recover damaged files.</p>
 
         <div class="ffmpeg-step">
@@ -164,7 +164,7 @@
 
   <div id="empty-results">No issues found matching this filter.</div>
 
-  <div class="legend">
+  <div class="legend text-up">
     <div class="legend-item"><span class="status-dot dot-no_moov"></span> No moov — missing metadata index</div>
     <div class="legend-item"><span class="status-dot dot-corrupt"></span> Corrupt — invalid or zeroed structure</div>
     <div class="legend-item"><span class="status-dot dot-truncated"></span> Truncated — file cut short</div>
