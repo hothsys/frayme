@@ -50,6 +50,27 @@ on run
 		return
 	end if
 
+	-- Before trying to start, check if Frayme is already running from
+	-- another directory (e.g. a different clone) by checking the port globally.
+	set portInUse to false
+	try
+		do shell script "python3 -c 'import socket,sys;sys.exit(0 if socket.socket().connect_ex((\"127.0.0.1\",5901))==0 else 1)'"
+		set portInUse to true
+	on error
+		set portInUse to false
+	end try
+
+	if portInUse then
+		set serverURL to "http://localhost:5901"
+		set choice to button returned of (display dialog "Frayme is running at " & serverURL with title "Frayme" buttons {"Stop Frayme", "Open in Browser"} default button "Open in Browser" with icon (path to resource "dialog.icns"))
+		if choice is "Open in Browser" then
+			open location serverURL
+		else
+			do shell script "kill $(lsof -ti:5901 2>/dev/null) 2>/dev/null || true"
+		end if
+		return
+	end if
+
 	try
 		do shell script envPrefix & ctl & " start 2>&1"
 	on error errMsg
