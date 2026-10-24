@@ -30,7 +30,12 @@
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
-    font-size: 14px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .text-up {
+    font-size: 15px;
     line-height: 1.6;
   }
 
@@ -40,6 +45,7 @@
     display: flex;
     align-items: center;
     gap: 16px;
+    flex-wrap: nowrap;
     background: var(--surface);
   }
   header .logo {
@@ -55,13 +61,14 @@
   header .spacer { flex: 1; }
   header .badge {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text3);
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 3px 8px;
   }
+  .badge.text-up, .text-up { font-size: 15px; }
 
   main { max-width: 1200px; margin: 0 auto; padding: 28px 32px 60px; }
 
@@ -169,6 +176,7 @@
   .input-row input:focus { border-color: var(--blue); }
   .input-row input:disabled { opacity: .5; cursor: default; }
   .btn-primary {
+    font-family: var(--sans);
     background: var(--blue);
     color: #fff;
     border: none;
@@ -183,6 +191,7 @@
   .btn-primary:hover { opacity: .88; }
   .btn-primary:disabled { opacity: .45; cursor: default; }
   .btn-outline {
+    font-family: var(--sans);
     background: transparent;
     border: 1px solid var(--border2);
     color: var(--text2);
@@ -196,6 +205,7 @@
   .btn-outline:hover { border-color: var(--text2); color: var(--text); }
   .btn-outline:disabled { opacity: .45; cursor: default; pointer-events: none; }
   .btn-danger {
+    font-family: var(--sans);
     background: var(--red-dim);
     color: var(--red);
     border: 1px solid rgba(224,82,82,.25);
@@ -649,9 +659,10 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 8px;
-    font-size: 12px;
+    font-size: 15px;
     color: var(--text3);
   }
+  .legend.text-up { font-size: 15px; }
   .legend-item {
     display: flex; align-items: center; gap: 8px;
   }
