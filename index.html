@@ -164,12 +164,45 @@
 
   <div id="empty-results">No issues found matching this filter.</div>
 
-  <div class="legend text-up">
-    <div class="legend-item"><span class="status-dot dot-no_moov"></span> No moov — missing metadata index</div>
-    <div class="legend-item"><span class="status-dot dot-corrupt"></span> Corrupt — invalid or zeroed structure</div>
-    <div class="legend-item"><span class="status-dot dot-truncated"></span> Truncated — file cut short</div>
-    <div class="legend-item"><span class="status-dot dot-empty"></span> Empty — zero bytes</div>
-    <div class="legend-item"><span class="status-dot dot-error"></span> Error — could not read file</div>
+  <div class="legend">
+    <h3>Status Guide</h3>
+    <div class="legend-grid">
+      <div class="legend-item">
+        <div class="legend-dot dot-no_moov"></div>
+        <div class="legend-text">
+          <strong>No moov</strong>
+          <span>Video data exists but the moov atom (metadata index) is missing or unreadable. Players can't seek or open it; recovery rebuilds the index or transplants one from a healthy donor.</span>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-corrupt"></div>
+        <div class="legend-text">
+          <strong>Corrupt</strong>
+          <span>Container or header structure is invalid or zeroed. Likely needs raw H.264 NAL extraction or a donor transplant to recover usable video.</span>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-truncated"></div>
+        <div class="legend-text">
+          <strong>Truncated</strong>
+          <span>Recording or transfer stopped early, cutting the file short. Partial footage may still be recoverable.</span>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-empty"></div>
+        <div class="legend-text">
+          <strong>Empty</strong>
+          <span>Zero-byte file or too small to contain any video. The filename survived, but the contents did not.</span>
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-error"></div>
+        <div class="legend-text">
+          <strong>Error</strong>
+          <span>Could not be read (permissions, I/O error, or unsupported variant). Inspect the file manually.</span>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="queue-panel">
     <div class="queue-header" onclick="if (!event.target.closest('.queue-clear-btn')) this.parentElement.classList.toggle('collapsed')">
