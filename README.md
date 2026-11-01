@@ -2,12 +2,17 @@
   <img src="logo.svg" alt="Frayme logo" width="280">
 </p>
 
-# Frayme
+<h1 align="center">Frayme</h1>
 
-A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.
+<p align="center">
+  A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.
+</p>
 
-![Python 3](https://img.shields.io/badge/python-3.7%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.7%2B-blue" alt="Python 3">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+</p>
+
 
 ## What It Does
 
