@@ -34,6 +34,9 @@
     line-height: 1.6;
   }
 
+  /* Form controls and code don't inherit the page font by default */
+  button, input, select, textarea, code, pre, kbd { font-family: inherit; }
+
   .text-up {
     font-size: 15px;
     line-height: 1.6;
