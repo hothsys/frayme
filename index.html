@@ -81,6 +81,11 @@
       <button class="btn-danger" id="cancel-btn" onclick="cancelScan()" disabled>Cancel</button>
     </div>
     <div id="mount-status" class="mount-status" style="display:none"></div>
+    <div id="prev-scans-row" class="prev-scans-row" style="display:none">
+      <span class="prev-scans-label">Previous scans</span>
+      <select id="prev-scans-select" onchange="loadSelectedScan(this)"></select>
+      <button class="btn-outline" id="clear-scans-btn" onclick="clearAllScans()">Clear all</button>
+    </div>
   </div>
 
   <div class="browse-overlay" id="browse-overlay" onclick="if(event.target===this)closeBrowse()">

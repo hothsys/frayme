@@ -998,6 +998,49 @@ class ScanCancelled(Exception):
     pass
 
 
+def _find_intact_twin(filepath, file_size):
+    """Path of another video in the same folder with the same size and an ftyp header."""
+    fdir = os.path.dirname(filepath)
+    try:
+        names = os.listdir(fdir)
+    except OSError:
+        return None
+    for name in names:
+        other = os.path.join(fdir, name)
+        if (other == filepath or
+                os.path.splitext(name)[1].lower() not in VIDEO_EXTS):
+            continue
+        try:
+            if os.path.getsize(other) != file_size:
+                continue
+            with open(other, 'rb') as f:
+                if f.read(8)[4:8] == b'ftyp':
+                    return other
+        except OSError:
+            continue
+    return None
+
+
+def _no_structure_result(filepath, file_size, details):
+    """check_video result for a file with no MP4 boxes and a non-zeroed header.
+
+    Neither recovery engine has an mdat to work from, so mark it unrecoverable.
+    """
+    details['unrecoverable'] = True
+    twin = _find_intact_twin(filepath, file_size)
+    if twin:
+        # Messages keeps an encrypted copy next to each received video
+        details['intact_copy'] = twin
+        return ('corrupt',
+                'No video structure; appears to be an encrypted copy. An intact '
+                f'copy of the same size is in this folder: {os.path.basename(twin)}',
+                details)
+    return ('corrupt',
+            'No valid MP4/MOV container structure found; the file may be '
+            'encrypted or not a video',
+            details)
+
+
 def check_video(filepath, should_stop=None):
     """Check a video file for integrity issues.
 
@@ -1089,9 +1132,7 @@ def check_video(filepath, should_stop=None):
         # Parse MP4 boxes
         boxes = parse_boxes(filepath)
         if not boxes:
-            return ('corrupt',
-                    'No valid MP4/MOV container structure found',
-                    details)
+            return _no_structure_result(filepath, file_size, details)
 
         details['boxes'] = [(bt, off, sz) for bt, off, sz in boxes]
 
@@ -1190,9 +1231,7 @@ def check_video(filepath, should_stop=None):
                     details)
 
         if not has_ftyp and not has_moov and not has_mdat:
-            return ('corrupt',
-                    'No valid MP4/MOV container structure found',
-                    details)
+            return _no_structure_result(filepath, file_size, details)
 
         return 'ok', None, details
 
@@ -2594,6 +2633,9 @@ def scan_directory_gen(root_dir, scan_id=None):
                 fdir = os.path.dirname(fpath)
                 ext = os.path.splitext(fname)[1].lower()
                 fsize = details.get('file_size', 0)
+                # Mark the folder as scanned even if it has no healthy files,
+                # so _ensure_donor_pool doesn't recheck it during recovery
+                donor_pool.setdefault(fdir, [])
 
                 elapsed = time.time() - start_time
                 rate = scanned / elapsed if elapsed > 0 else 0
@@ -2653,9 +2695,33 @@ def scan_directory_gen(root_dir, scan_id=None):
 
 # ─── Recovery execution ───────────────────────────────────────────────────────
 
+def _ensure_donor_pool(fdir):
+    """Collect healthy donors for a folder this session hasn't scanned, e.g.
+    when recovering from a previous scan loaded in the browser."""
+    if fdir in donor_pool:
+        return
+    healthy = []
+    try:
+        names = sorted(os.listdir(fdir))
+    except OSError:
+        names = []
+    for name in names:
+        fpath = os.path.join(fdir, name)
+        if (os.path.splitext(name)[1].lower() not in VIDEO_EXTS
+                or not os.path.isfile(fpath)):
+            continue
+        try:
+            if check_video(fpath)[0] == 'ok':
+                healthy.append(fpath)
+        except Exception:
+            pass
+    donor_pool[fdir] = healthy
+
+
 def _execute_recovery(filepath, donor_override='', output_dir=''):
     """Run recovery on a single file. Returns result dict on success."""
     fdir = os.path.dirname(filepath)
+    _ensure_donor_pool(fdir)
 
     donor_path = donor_override
     if not donor_path:
@@ -2852,6 +2918,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 self._handle_recover_queue()
             elif path == '/api/recover-queue-clear':
                 self._handle_recover_queue_clear()
+            elif path == '/api/load-scan':
+                self._handle_load_scan()
             else:
                 self.send_error(404)
         except (ConnectionResetError, BrokenPipeError):
@@ -3007,6 +3075,16 @@ class FrameHandler(SimpleHTTPRequestHandler):
             return self._send_json({'error': str(e)}, 500)
 
         self._send_json({'ok': True})
+
+    def _handle_load_scan(self):
+        # A previous scan picked in the browser becomes the results Export uses
+        if scan_state.get('running'):
+            return self._send_json({'error': 'A scan is running'}, 409)
+        results = self._read_json_body().get('results')
+        if not isinstance(results, list):
+            return self._send_json({'error': 'No results provided'}, 400)
+        scan_state['results'] = results
+        self._send_json({'ok': True, 'count': len(results)})
 
     def _handle_set_donor(self):
         data = self._read_json_body()

@@ -652,6 +652,43 @@
     font-size: 14px;
   }
 
+  /* ── Previous scans dropdown ── */
+  .prev-scans-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: stretch;   /* dropdown and Clear all share one height */
+    gap: 8px;
+  }
+  .prev-scans-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--text2);
+    white-space: nowrap;
+    align-self: center;
+  }
+  .prev-scans-row select {
+    flex: 1;
+    /* Drawn by the page rather than as the native macOS control, which ignores
+       padding; this lets it match the height of the path input above */
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%238890a0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px;
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: normal;    /* same as the path input, so the heights match */
+    padding: 8px 36px 8px 12px;
+    outline: none;
+    cursor: pointer;
+  }
+  .prev-scans-row select:focus { border-color: var(--blue); }
+  .prev-scans-row select:disabled { opacity: .5; cursor: not-allowed; }
+  .prev-scans-row select option { background: var(--surface); }
+
   /* ── Legend ── */
   .legend {
     margin-top: 32px;

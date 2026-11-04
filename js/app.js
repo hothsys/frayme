@@ -119,12 +119,8 @@ function startScan() {
   document.getElementById('s-truncated').textContent   = '0';
   document.getElementById('s-empty').textContent       = '0';
   document.getElementById('s-scanned').textContent     = '0';
-  document.getElementById('summary-bar').style.display = 'none';
-  document.getElementById('export-bar').style.display  = 'none';
-  document.getElementById('results-section').style.display = 'none';
-  document.getElementById('empty-results').style.display   = 'none';
+  hideScanResults();
 
-  document.getElementById('scan-notice').style.display = 'none';
   setScanControls(true);
   document.getElementById('progress-section').style.display = 'block';
   document.getElementById('p-bar').style.width   = '0%';
@@ -285,8 +281,12 @@ function buildIssueRowHtml(ev) {
         + (!ffmpegAvailable && ev.status !== 'no_moov' ? ' disabled title="Requires ffmpeg"' : '')
         + '>Recover Video</button>'
       : '';
+    var intactCopy = ev.details && ev.details.intact_copy;
+    var copyBtn = intactCopy
+      ? '<button class="copy-path-btn" data-reveal="' + escHtml(intactCopy) + '">Show Intact Copy</button>'
+      : '';
     actionHtml = '<button class="copy-path-btn" data-copy="' + escHtml(ev.filepath) + '">Copy Path</button>' +
-      recoverBtn;
+      copyBtn + recoverBtn;
   }
 
   return '<div class="issue-row">' +
@@ -328,7 +328,24 @@ function scanDone(scanned, issues, wasCancelled) {
     notice.textContent = 'Scan cancelled after ' + scanned + ' of ' + total + ' files. Results are partial.';
   }
 
-  // Count by status
+  updateSummary(issues, scanned);
+
+  // Before the messages below, since it resets the empty-results text
+  applyFilter();
+
+  if (issues > 0) {
+    document.getElementById('export-bar').style.display = 'flex';
+    document.getElementById('results-section').style.display = 'block';
+    saveScan();
+  } else {
+    document.getElementById('empty-results').style.display = 'block';
+    document.getElementById('empty-results').textContent = wasCancelled
+      ? 'No issues found in the ' + scanned + ' files checked before cancelling.'
+      : 'All ' + scanned + ' video files are intact.';
+  }
+}
+
+function updateSummary(issues, scanned) {
   var counts = { no_moov: 0, corrupt: 0, truncated: 0, empty: 0, error: 0 };
   Object.values(folderData).forEach(function(fd) {
     fd.issues.forEach(function(i) {
@@ -343,19 +360,14 @@ function scanDone(scanned, issues, wasCancelled) {
   document.getElementById('s-empty').textContent     = counts.empty;
   document.getElementById('s-scanned').textContent   = scanned;
   document.getElementById('summary-bar').style.display = 'flex';
+}
 
-  // Before the messages below, since it resets the empty-results text
-  applyFilter();
-
-  if (issues > 0) {
-    document.getElementById('export-bar').style.display = 'flex';
-    document.getElementById('results-section').style.display = 'block';
-  } else {
-    document.getElementById('empty-results').style.display = 'block';
-    document.getElementById('empty-results').textContent = wasCancelled
-      ? 'No issues found in the ' + scanned + ' files checked before cancelling.'
-      : 'All ' + scanned + ' video files are intact.';
-  }
+function hideScanResults() {
+  document.getElementById('summary-bar').style.display     = 'none';
+  document.getElementById('export-bar').style.display      = 'none';
+  document.getElementById('results-section').style.display = 'none';
+  document.getElementById('empty-results').style.display   = 'none';
+  document.getElementById('scan-notice').style.display     = 'none';
 }
 
 // While scanning, only Cancel is usable
@@ -363,6 +375,8 @@ function setScanControls(scanning) {
   document.getElementById('dir-input').disabled  = scanning;
   document.getElementById('browse-btn').disabled = scanning;
   document.getElementById('scan-btn').disabled   = scanning;
+  document.getElementById('prev-scans-select').disabled = scanning;
+  document.getElementById('clear-scans-btn').disabled   = scanning;
   var cancelBtn = document.getElementById('cancel-btn');
   cancelBtn.disabled = !scanning;
   cancelBtn.textContent = 'Cancel';
@@ -383,6 +397,147 @@ function cancelScan() {
                parseInt(document.getElementById('p-issues').textContent) || 0, true);
     }
   }, 5000);
+}
+
+// ── Previous scans (IndexedDB) ──
+
+// Generic rather than the app's name, so renaming the app doesn't strand
+// saved scans in a database the page no longer opens
+const DB_NAME  = 'scan-history';
+const DB_STORE = 'scan';
+const MAX_SCANS = 10;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+function idbReq(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function saveScan() {
+  try {
+    const db  = await openDB();
+    const ts  = Date.now();
+    const dir = document.getElementById('dir-input').value.trim();
+
+    const scanned = parseInt(document.getElementById('s-scanned').textContent.replace(/,/g, '')) || 0;
+
+    const tx1 = db.transaction(DB_STORE, 'readwrite');
+    await idbReq(tx1.objectStore(DB_STORE).put({ ts, dir, folderData, scanned }, ts));
+
+    // Prune oldest beyond MAX_SCANS
+    const tx2   = db.transaction(DB_STORE, 'readwrite');
+    const store = tx2.objectStore(DB_STORE);
+    const keys  = (await idbReq(store.getAllKeys())).sort((a,b) => a - b);
+    while (keys.length > MAX_SCANS) store.delete(keys.shift());
+
+    const scans = await loadSavedScans();
+    populateScanDropdown(scans, ts);
+  } catch(e) {}
+}
+
+async function loadSavedScans() {
+  try {
+    const db  = await openDB();
+    const all = await idbReq(db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).getAll());
+    return all.sort((a,b) => b.ts - a.ts);
+  } catch(e) { return []; }
+}
+
+async function loadScan(ts) {
+  try {
+    const db = await openDB();
+    return await idbReq(db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(ts));
+  } catch(e) { return null; }
+}
+
+async function clearAllScans() {
+  try {
+    const db = await openDB();
+    await idbReq(db.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).clear());
+  } catch(e) {}
+  document.getElementById('prev-scans-row').style.display = 'none';
+  Object.keys(folderData).forEach(k => delete folderData[k]);
+  document.getElementById('folder-list').innerHTML = '';
+  hideScanResults();
+}
+
+async function loadSelectedScan(sel) {
+  const ts = parseInt(sel.value);
+  if (!ts) return;
+  const saved = await loadScan(ts);
+  if (!saved) {
+    alert('Could not load this scan. It may have been cleared. Try rescanning.');
+    return;
+  }
+  Object.keys(folderData).forEach(k => delete folderData[k]);
+  document.getElementById('folder-list').innerHTML = '';
+  hideScanResults();
+  restoreScan(saved);
+  watchMount(saved.dir);
+
+  // Export runs on the server, so hand it the loaded results
+  const results = [].concat(...Object.values(folderData).map(fd => fd.issues));
+  fetch('/api/load-scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ results: results }),
+  }).catch(err => console.error('Loading scan on the server failed:', err));
+}
+
+function populateScanDropdown(scans, selectTs) {
+  const row = document.getElementById('prev-scans-row');
+  const sel = document.getElementById('prev-scans-select');
+  if (!scans || scans.length === 0) { row.style.display = 'none'; return; }
+
+  // Exact date and time in the user's locale, e.g. "Oct 26, 2026, 2:15 PM"
+  const when = ts => new Date(ts).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  sel.innerHTML = '';
+  if (!selectTs) {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select a scan to load…';
+    placeholder.disabled = placeholder.selected = true;
+    sel.appendChild(placeholder);
+  }
+  [...scans].sort((a, b) => b.ts - a.ts).forEach(scan => {   // most recent first
+    const opt  = document.createElement('option');
+    opt.value  = scan.ts;
+    const parts = (scan.dir || '').split('/').filter(Boolean);
+    const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : scan.dir || '';
+    opt.textContent = when(scan.ts) + (short ? ' · ' + short : '');
+    opt.title = scan.dir || '';
+    sel.appendChild(opt);
+  });
+  if (selectTs) sel.value = selectTs;
+  row.style.display = 'flex';
+}
+
+function restoreScan(saved) {
+  Object.assign(folderData, saved.folderData);
+  if (saved.dir) document.getElementById('dir-input').value = saved.dir;
+
+  document.getElementById('results-section').style.display = 'block';
+  for (const [dir, fd] of Object.entries(folderData)) {
+    upsertFolderGroup(dir);
+    for (const ev of fd.issues) appendIssueRow(dir, ev);
+  }
+
+  const total = Object.values(folderData).reduce((s,f) => s+f.total, 0);
+  updateSummary(total, saved.scanned || 0);
+  document.getElementById('export-bar').style.display = 'flex';
+
+  applyFilter();
 }
 
 // ── Filtering ──
@@ -785,6 +940,8 @@ document.getElementById('dir-input').addEventListener('change', function() {
 });
 
 checkFfmpeg();
+// Saved scans are listed but not loaded; the user picks one from the dropdown
+loadSavedScans().then(scans => populateScanDropdown(scans, null));
 try {
   var savedDir = localStorage.getItem('lastVideoScanDir');
   if (savedDir) {
