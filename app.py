@@ -2784,6 +2784,12 @@ class FrameHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=APP_DIR, **kwargs)
 
+    def end_headers(self):
+        # Make browsers revalidate static assets so CSS/JS edits show up on reload
+        if not self._route_path().startswith('/api/'):
+            self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+
     def _send_json(self, data, status=200):
         body = json.dumps(data, default=str).encode()
         self.send_response(status)
