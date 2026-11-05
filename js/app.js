@@ -35,20 +35,65 @@ async function checkFfmpeg() {
 
 var browseCurrentPath = '/';
 
+// Damaged file whose donor folder is being chosen; null when the browser
+// picks the scan directory
+var donorFolderFor = null;
+
 function openBrowse() {
   document.getElementById('browse-overlay').classList.add('open');
   var input = document.getElementById('dir-input').value.trim();
   browseTo(input || '/Volumes');
 }
 
+function openDonorBrowse(filepath) {
+  donorFolderFor = filepath;
+  document.querySelector('#browse-overlay .browse-top h3').textContent =
+    'Choose a Folder of Healthy Videos from the Same Camera';
+  document.getElementById('browse-overlay').classList.add('open');
+  browseTo(filepath.substring(0, filepath.lastIndexOf('/')) || '/Volumes');
+}
+
 function closeBrowse() {
   document.getElementById('browse-overlay').classList.remove('open');
+  donorFolderFor = null;
+  document.querySelector('#browse-overlay .browse-top h3').textContent = 'Choose Directory';
 }
 
 function selectBrowseDir() {
+  if (donorFolderFor) {
+    addDonorFolder(donorFolderFor, browseCurrentPath);
+    closeBrowse();
+    return;
+  }
   document.getElementById('dir-input').value = browseCurrentPath;
   watchMount(browseCurrentPath);
   closeBrowse();
+}
+
+function addDonorFolder(filepath, folder) {
+  var btn = document.querySelector('[data-donor-folder="' + CSS.escape(filepath) + '"]');
+  if (btn) { btn.textContent = 'Checking folder…'; btn.disabled = true; }
+  fetch('/api/add-donor-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filepath: filepath, donor_dir: folder }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) { btn.textContent = 'Choose Donor Folder'; btn.disabled = false; }
+    if (!d.ok || !d.found) {
+      alert(d.error || ('No healthy MP4/MOV videos found in ' + folder +
+        ' (' + (d.checked || 0) + ' video files checked).'));
+      return;
+    }
+    // Retry with the new candidates
+    var recBtn = document.querySelector('[data-recover="' + CSS.escape(filepath) + '"]');
+    if (recBtn) recoverVideo(recBtn);
+  })
+  .catch(function(err) {
+    if (btn) { btn.textContent = 'Choose Donor Folder'; btn.disabled = false; }
+    console.error('Adding donor folder failed:', err);
+  });
 }
 
 function browseTo(path) {
@@ -274,8 +319,9 @@ function buildIssueRowHtml(ev) {
     }
     actionHtml = '<div class="recovery-result">' + parts.join('') + '</div>';
   } else {
-    var canRecover = (ev.status === 'no_moov' || ev.status === 'corrupt') &&
-      !(ev.details && ev.details.unrecoverable);
+    var canRecover = ((ev.status === 'no_moov' || ev.status === 'corrupt') &&
+      !(ev.details && ev.details.unrecoverable)) ||
+      !!(ev.details && ev.details.salvageable);
     var recoverBtn = canRecover
       ? '<button class="recover-btn" data-recover="' + escHtml(ev.filepath) + '"'
         + (!ffmpegAvailable && ev.status !== 'no_moov' ? ' disabled title="Requires ffmpeg"' : '')
@@ -622,6 +668,13 @@ document.addEventListener('click', function(e) {
     return;
   }
 
+  var donorFolderTarget = e.target.closest('[data-donor-folder]');
+  if (donorFolderTarget) {
+    e.preventDefault();
+    e.stopPropagation();
+    openDonorBrowse(donorFolderTarget.getAttribute('data-donor-folder'));
+    return;
+  }
   var donorTarget = e.target.closest('[data-set-donor]');
   if (donorTarget) {
     e.preventDefault();
@@ -786,6 +839,11 @@ function showRecoverFailure(job) {
   if (!btn) return;
   btn.textContent = 'Retry Recovery';
   btn.disabled = false;
+  // Most failures come down to a missing or mismatched donor
+  if (!document.querySelector('[data-donor-folder="' + CSS.escape(job.filepath) + '"]')) {
+    btn.insertAdjacentHTML('beforebegin', '<button class="copy-path-btn" data-donor-folder="' +
+      escHtml(job.filepath) + '">Choose Donor Folder</button>');
+  }
   var info = btn.closest('.issue-row').querySelector('.issue-info');
   var msg = 'Recovery failed: ' + (job.error || 'unknown error');
   info.insertAdjacentHTML('beforeend',
