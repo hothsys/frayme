@@ -331,29 +331,30 @@
   /* ── Summary bar ── */
   #summary-bar {
     display: none;
-    gap: 12px;
-    margin-bottom: 24px;
+    gap: 8px;
+    margin-bottom: 16px;
     flex-wrap: wrap;
   }
   .scard {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px 18px;
+    padding: 8px 12px;
     flex: 1;
-    min-width: 120px;
+    min-width: 110px;
   }
   .scard .sc-label {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: .04em;
     color: var(--text3);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
   .scard .sc-val {
     font-family: var(--mono);
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 500;
+    line-height: 1.3;
   }
   .scard.amber  .sc-val { color: var(--amber); }
   .scard.red    .sc-val { color: var(--red); }
@@ -456,11 +457,12 @@
   .folder-group.open .folder-body { display: block; }
 
   /* ── Issue rows ── */
+  /* Top-aligned: a multi-line reason shouldn't push the dot or buttons around */
   .issue-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 16px 8px 42px;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 16px 10px 42px;
     border-bottom: 1px solid var(--border);
     font-size: 13px;
     transition: background .1s;
@@ -472,6 +474,7 @@
     width: 8px; height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    margin-top: 6px;           /* centred on the filename line */
   }
   .dot-no_moov   { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
   .dot-corrupt    { background: var(--red); box-shadow: 0 0 6px var(--red); }
@@ -511,6 +514,7 @@
     color: var(--text3);
     flex-shrink: 0;
     white-space: nowrap;
+    padding-top: 2px;
   }
 
   .status-badge {
@@ -527,21 +531,44 @@
   .badge-empty      { background: var(--grey-dim); color: var(--text3); }
   .badge-error      { background: var(--blue-dim); color: var(--blue); }
 
-  /* ── Action buttons ── */
-  .copy-path-btn {
+  /* ── Row actions ── */
+  .row-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .copy-btn {
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text3);
     cursor: pointer;
-    padding: 3px 6px;
+    width: 30px;
+    height: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color .15s, border-color .15s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text2); }
+  .row-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text2);
+    cursor: pointer;
+    padding: 3px 8px;
+    height: 26px;
     font-size: 12.5px;
     font-family: var(--mono);
     white-space: nowrap;
     flex-shrink: 0;
     transition: color .15s, border-color .15s;
   }
-  .copy-path-btn:hover { color: var(--text); border-color: var(--text3); }
+  .row-btn:hover { color: var(--text); border-color: var(--text3); }
 
   .rotation-select {
     background: var(--surface2);
@@ -550,6 +577,7 @@
     color: var(--text2);
     font-family: var(--mono);
     font-size: 12.5px;
+    height: 26px;
     padding: 2px 4px;
     flex-shrink: 0;
     cursor: pointer;
@@ -563,7 +591,8 @@
     border-radius: 4px;
     color: #e6b43c;
     cursor: pointer;
-    padding: 3px 6px;
+    height: 26px;
+    padding: 3px 8px;
     font-size: 12.5px;
     font-family: var(--mono);
     white-space: nowrap;
@@ -581,37 +610,22 @@
     color: var(--text3);
   }
 
-  /* ── Recovery result ── */
-  .recovery-result {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
-  }
-  .rr-item {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-  .rr-label {
-    font-family: var(--mono);
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    color: var(--text3);
-    line-height: 1;
-    margin-bottom: 1px;
-  }
-  .rr-value {
+  /* ── Recovered rows: one line under the filename ── */
+  .recovered-line {
     font-family: var(--mono);
     font-size: 12.5px;
     color: var(--green);
-    line-height: 1.3;
-    white-space: nowrap;
+    margin-top: 1px;
+    overflow-wrap: anywhere;
   }
-  .rr-method {
-    color: var(--text2);
+  .recovered-link {
+    color: var(--green);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(76,175,130,.4);
+    text-underline-offset: 2px;
   }
+  .recovered-link:hover { color: var(--text); }
   .rr-warn {
     color: var(--amber);
   }
@@ -714,24 +728,44 @@
   }
 
   /* ── Legend ── */
-  .legend {
-    margin-top: 32px;
-    padding: 16px 20px;
+  .guide-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 360px;
+    max-width: 92vw;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 28px rgba(0,0,0,.45);
+    padding: 16px 20px 24px;
+    overflow-y: auto;
+    z-index: 45;                 /* under the Recovery Queue, which stays visible */
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform .2s ease, visibility .2s;
   }
-  .legend h3 {
+  .guide-drawer.open {
+    transform: none;
+    visibility: visible;
+  }
+  .guide-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .guide-head h3 {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: .07em;
     color: var(--text2);
-    margin-bottom: 12px;
+    font-weight: 600;
   }
   .legend-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 12px;
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
   .legend-item {
     display: flex;
@@ -774,9 +808,8 @@
   }
   .queue-header {
     display: flex;
-    flex-wrap: wrap;             /* counts drop to their own line */
-    align-items: center;
-    gap: 6px 8px;
+    align-items: center;         /* buttons centre on the title + counts block */
+    gap: 10px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
@@ -787,19 +820,29 @@
     font-size: 15px;
     color: var(--text);
   }
-  /* Own full-width line under the title, so it never wraps mid-list */
+  .queue-head-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
   .queue-counts {
-    order: 10;
-    flex-basis: 100%;
     font-family: var(--mono);
     font-size: 13px;
     color: var(--text3);
-    white-space: nowrap;
+    line-height: 1.4;
   }
-  .queue-title { flex: 1; }
+  .queue-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
   .queue-clear-btn {
-    padding: 2px 8px;
+    padding: 5px 10px;           /* room above and below; Josefin Sans sits high at small sizes */
     font-size: 12px;
+    line-height: 1.2;
   }
   /* Keep hover for the "nothing to clear" tooltip */
   .queue-clear-btn:disabled { pointer-events: auto; cursor: not-allowed; }
