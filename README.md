@@ -90,7 +90,7 @@ Leave the window open while you use Frayme, and press **Ctrl+C** in it to stop. 
 
    HEIC/HEIF/AVIF photos saved with a video extension (common inside Photos libraries) are recognized as still images and skipped, not reported as damaged videos.
 
-4. Once the scan finishes, click **Recover Video** on any file, and Frayme auto-selects a compatible donor from healthy files found during the scan. Recoveries run one at a time in the **Recovery Queue** panel (bottom right), which shows each job's progress; **Clear Done** removes finished and failed jobs, and is greyed out until something has finished. If a recovery fails, the row shows the reason and the button changes to **Retry Recovery**
+4. Once the scan finishes, click **Recover** on any file, and Frayme auto-selects a compatible donor from healthy files found during the scan. Recoveries run one at a time in the **Recovery Queue** panel (bottom right), which shows each job's progress; **Clear Done** removes finished and failed jobs, and is greyed out until something has finished. If a recovery fails, the row shows the reason and the button changes to **Retry Recovery**
 5. Export results to CSV at any time
 
 ## How Recovery Works

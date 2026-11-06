@@ -325,7 +325,7 @@ function buildIssueRowHtml(ev) {
     var recoverBtn = canRecover
       ? '<button class="recover-btn" data-recover="' + escHtml(ev.filepath) + '"'
         + (!ffmpegAvailable && ev.status !== 'no_moov' ? ' disabled title="Requires ffmpeg"' : '')
-        + '>Recover Video</button>'
+        + '>Recover</button>'
       : '';
     var intactCopy = ev.details && ev.details.intact_copy;
     var copyBtn = intactCopy
@@ -629,7 +629,37 @@ function applyFilter() {
 
 // ── Click handlers ──
 
+// Cancel a queued recovery and put its row's button back to Recover
+function cancelQueuedJob(jobId) {
+  fetch('/api/recover-cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (!d.ok) {
+      alert(d.error || 'Could not cancel this recovery.');
+    } else {
+      var btn = document.querySelector('[data-recover="' + CSS.escape(d.filepath) + '"]');
+      if (btn && btn.textContent === 'Queued') {
+        btn.textContent = 'Recover';
+        btn.disabled = false;
+      }
+    }
+    pollQueueStatus();
+  })
+  .catch(function(err) { console.error('Cancelling recovery failed:', err); });
+}
+
 document.addEventListener('click', function(e) {
+  var cancelTarget = e.target.closest('[data-cancel-job]');
+  if (cancelTarget) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelQueuedJob(cancelTarget.getAttribute('data-cancel-job'));
+    return;
+  }
   var browseTarget = e.target.closest('[data-browse]');
   if (browseTarget) {
     e.preventDefault();
@@ -692,8 +722,8 @@ function recoverVideo(btn) {
 
   btn.textContent = 'Queuing…';
   btn.disabled = true;
-  var prevError = btn.closest('.issue-row').querySelector('.recover-error');
-  if (prevError) prevError.remove();
+  btn.closest('.issue-row').querySelectorAll('.recover-error, .recover-hints')
+    .forEach(function(el) { el.remove(); });
 
   var body = { filepath: filepath };
   if (donor) body.donor = donor;
@@ -714,7 +744,7 @@ function recoverVideo(btn) {
       btn.style.color = 'var(--red)';
       btn.style.borderColor = 'rgba(224,82,82,.35)';
       setTimeout(function() {
-        btn.textContent = 'Recover Video';
+        btn.textContent = 'Recover';
         btn.style.color = '';
         btn.style.borderColor = '';
         btn.disabled = false;
@@ -725,7 +755,7 @@ function recoverVideo(btn) {
     btn.textContent = 'Error';
     btn.style.color = 'var(--red)';
     setTimeout(function() {
-      btn.textContent = 'Recover Video';
+      btn.textContent = 'Recover';
       btn.style.color = '';
       btn.style.borderColor = '';
       btn.disabled = false;
@@ -815,17 +845,22 @@ function updateQueuePanel(jobs) {
       detail = formatSize(job.result.size);
       if (job.result.method) detail += ' · ' + escHtml(job.result.method);
     } else if (job.status === 'failed' && job.error) {
-      detail = escHtml(job.error.length > 50 ? job.error.substring(0, 50) + '…' : job.error);
+      detail = escHtml(job.error);
     } else if (job.status === 'recovering' && job.started_at) {
       var elapsed = Math.floor(Date.now() / 1000 - job.started_at);
       detail = elapsed + 's elapsed';
     }
 
+    var cancel = job.status === 'queued'
+      ? '<button class="queue-cancel-btn" data-cancel-job="' + escHtml(job.id) +
+        '" title="Cancel this recovery">Cancel</button>'
+      : '';
     return '<div class="queue-item ' + statusClass + '">' +
       '<span class="queue-status-icon">' + icon + '</span>' +
       '<span class="queue-filename">' + escHtml(job.filename) + '</span>' +
       '<span class="queue-detail">' + detail + '</span>' +
       '<span class="queue-status-label">' + job.status.toUpperCase() + '</span>' +
+      cancel +
       '</div>';
   }).join('');
 }
@@ -848,6 +883,30 @@ function showRecoverFailure(job) {
   var msg = 'Recovery failed: ' + (job.error || 'unknown error');
   info.insertAdjacentHTML('beforeend',
     '<div class="issue-reason recover-error" title="' + escHtml(msg) + '">' + escHtml(msg) + '</div>');
+  var clues = donorClues(job.hints);
+  if (clues) {
+    info.insertAdjacentHTML('beforeend',
+      '<div class="issue-reason recover-hints" title="' + escHtml(clues) + '">' + escHtml(clues) + '</div>');
+  }
+}
+
+// Clues to the source camera, so the right donor can be found for files with
+// generic names. Text found loose in the data may come from another file.
+function donorClues(hints) {
+  if (!hints) return '';
+  var strong = (hints.camera || []).filter(function(c) { return c[1]; }).map(function(c) { return c[0]; });
+  var weak = (hints.camera || []).filter(function(c) { return !c[1]; }).map(function(c) { return c[0]; });
+  var parts = [];
+  if (strong.length) parts.push(strong.join(', '));
+  if (hints.resolution) parts.push(hints.resolution.replace('x', '×'));
+  var unverified = [];
+  if (weak.length) unverified.push('mentions ' + weak.join(', '));
+  if (hints.dates && hints.dates.length) unverified.push('dates ' + hints.dates.join(', '));
+  if (unverified.length) {
+    parts.push('data also ' + unverified.join('; ') + ' (unverified, may belong to another file)');
+  }
+  return parts.length ? 'Donor clues: ' + parts.join(' · ')
+                      : 'Donor clues: none found in this file';
 }
 
 function updateInlineRows(jobs) {
@@ -873,24 +932,13 @@ function updateInlineRows(jobs) {
           if (i.filepath === job.filepath) ev = i;
         });
       });
-      if (ev) {
-        var id = 'fg-' + CSS.escape(ev.dir);
-        var group = document.getElementById(id);
-        if (group) {
-          var rows = group.querySelectorAll('.issue-row');
-          rows.forEach(function(row) {
-            var recBtn = row.querySelector('[data-recover="' + CSS.escape(job.filepath) + '"]');
-            var queuedBtn = null;
-            if (!recBtn) {
-              row.querySelectorAll('button').forEach(function(b) {
-                if (b.textContent === 'Queued') queuedBtn = b;
-              });
-            }
-            if (recBtn || queuedBtn) {
-              row.outerHTML = buildIssueRowHtml(ev);
-            }
-          });
-        }
+      // Replace only this file's row, found by its filename link. Matching
+      // any row with a "Queued" button overwrote every other queued file's
+      // row with this file when several were queued at once.
+      var link = ev && document.querySelector(
+        '.issue-filename[data-reveal="' + CSS.escape(job.filepath) + '"]');
+      if (link) {
+        link.closest('.issue-row').outerHTML = buildIssueRowHtml(ev);
       }
     }
   });
