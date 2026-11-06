@@ -2509,7 +2509,7 @@ def _keyframe_mbs_decoded(filepath, keyframe, params, check_bottom=False):
         output = (['-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-']
                   if check_bottom else ['-f', 'null', '-'])
         r = subprocess.run(
-            [_ffmpeg_path, '-hide_banner', '-loglevel', 'level+info',
+            [_ffmpeg_path, '-hide_banner', '-loglevel', 'level+info', '-threads', '1',
              '-f', 'h264', '-i', tmp_path] + output,
             capture_output=True, timeout=30)
     finally:
@@ -2568,6 +2568,43 @@ def _keyframe_jump(filepath, nal_entries, params):
     if len(jumps) < 2 or not normal or not statistics.median(normal):
         return None
     return statistics.mean(jumps) / statistics.median(normal)
+
+
+# Trial decodes are separate ffmpeg runs, mostly process start-up, so they
+# run side by side. The short ones are single-threaded (-threads 1) to keep
+# the pool from oversubscribing the CPU.
+_TRIAL_WORKERS = max(2, min(8, (os.cpu_count() or 4) // 2))
+
+
+def _trial_map(fn, items, stop=None):
+    """fn over items on parallel workers; results in item order.
+
+    Runs in chunks of _TRIAL_WORKERS and stops after a chunk once
+    stop(result) holds for any result in it (later items stay None). Picking
+    the first or best result in item order then matches a sequential loop.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    results = [None] * len(items)
+    with ThreadPoolExecutor(_TRIAL_WORKERS) as pool:
+        for start in range(0, len(items), _TRIAL_WORKERS):
+            chunk = range(start, min(len(items), start + _TRIAL_WORKERS))
+            for i, result in zip(chunk, pool.map(lambda k: fn(items[k]), chunk)):
+                results[i] = result
+            if stop and any(results[i] is not None and stop(results[i]) for i in chunk):
+                break
+    return results
+
+
+def _trial_decode(filepath, nal_entries, params):
+    """(problems, frames) for a short stream decoded under inferred params."""
+    with tempfile.NamedTemporaryFile(suffix='.h264', delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        _write_annex_b_stream(filepath, nal_entries, [_build_h264_sps(params)],
+                              [_build_h264_pps(params)], tmp_path)
+        return _decode_stats(['-threads', '1', '-f', 'h264', '-i', tmp_path], 60)
+    finally:
+        os.unlink(tmp_path)
 
 
 def _infer_h264_params(filepath, nal_entries, hints=()):
@@ -2640,26 +2677,24 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
         # slice quantizer, so only the right pair decodes a keyframe. Any
         # plausible frame size works for this; the first rows decode.
         w0, h0 = sizes[0]
+        grid = [(key, transform, qp) for key in keyframes for transform in (1, 0)
+                for qp in (qps if hyp['entropy'] else hint_qps[:1])]
+        scores = _trial_map(
+            lambda c: _keyframe_mbs_decoded(filepath, c[0], dict(
+                hyp, width=w0, height=h0, transform_8x8=c[1], init_qp=c[2])),
+            grid, stop=lambda r: r[0] == r[1])
         found, found_frac, found_key = None, 0.0, None
-        for key in keyframes:
-            for transform in (1, 0):
-                for qp in (qps if hyp['entropy'] else hint_qps[:1]):
-                    done, total = _keyframe_mbs_decoded(filepath, key, dict(
-                        hyp, width=w0, height=h0, transform_8x8=transform, init_qp=qp))
-                    if done / total > found_frac:
-                        found, found_frac, found_key = (transform, qp), done / total, key
-                    if done == total:
-                        break
-                if found_frac == 1:
-                    break
-            if found_frac == 1:
-                break
+        for (key, transform, qp), score in zip(grid, scores):
+            if score and score[0] / score[1] > found_frac:
+                found, found_frac, found_key = (transform, qp), score[0] / score[1], key
         if not found:
             continue
-        size = next((s for s in sizes_by_mbs if _keyframe_mbs_decoded(
-            filepath, found_key, dict(hyp, width=s[0], height=s[1],
-                                      transform_8x8=found[0], init_qp=found[1]),
-            check_bottom=True)[0] == mbs(s)), None)
+        complete = _trial_map(
+            lambda s: _keyframe_mbs_decoded(filepath, found_key, dict(
+                hyp, width=s[0], height=s[1], transform_8x8=found[0],
+                init_qp=found[1]), check_bottom=True)[0] == mbs(s),
+            sizes_by_mbs, stop=bool)
+        size = next((s for s, ok in zip(sizes_by_mbs, complete) if ok), None)
         if not size:
             continue
         frame = dict(width=size[0], height=size[1], transform_8x8=found[0],
@@ -2672,11 +2707,21 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
         # next keyframe snaps it back; the right ones leave no jump.
         hint_scaling = next((h['default_scaling'] for h in hints
                              if 'default_scaling' in h), False)
-        scalings = (hint_scaling, not hint_scaling)
         cavlc_qps = qps[:24] if not hyp['entropy'] else [frame['init_qp']]
-        jumps = [(j, qp, sc) for sc in scalings for qp in cavlc_qps
-                 for j in [_keyframe_jump(filepath, nal_entries[:900], dict(
-                     hyp, **dict(frame, init_qp=qp, default_scaling=sc)))] if j]
+
+        def jumps_for(options):
+            measured = _trial_map(
+                lambda o: _keyframe_jump(filepath, nal_entries[:900], dict(
+                    hyp, **dict(frame, init_qp=o[1], default_scaling=o[0]))),
+                options)
+            return [(j, qp, sc) for (sc, qp), j in zip(options, measured) if j]
+
+        # The jump has a sharp minimum, so search one setting at a time: the
+        # quantizer with the likelier matrices, then the other matrices at
+        # that quantizer (25 decodes for CAVLC instead of 48)
+        jumps = jumps_for([(hint_scaling, qp) for qp in cavlc_qps])
+        if jumps:
+            jumps += jumps_for([(not hint_scaling, min(jumps)[1])])
         if jumps:
             _, frame['init_qp'], frame['default_scaling'] = min(jumps)
         else:
@@ -2692,35 +2737,20 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
             params = dict(variant, **frame)
             # Settings only P/B frames use. Implicit weighted bi-prediction
             # (weighted_bipred_idc 2) changes decoding but not the headers.
-            best = None
             bipreds = ((params['weighted_bipred'],) if params.get('weighted_bipred')
                        else (0, 2))
             ref_counts = ((params['ref_l0'],) if 'ref_l0' in params else (0, 1, 2, 3))
             l1_counts = ((params['ref_l1'],) if 'ref_l1' in params
                          else (0, 1) if has_b else (0,))
-            for bipred in bipreds:
-                for ref_l0, ref_l1 in [(r0, r1) for r0 in ref_counts for r1 in l1_counts]:
-                    for direct in (1, 0):
-                        cand = dict(params, ref_l0=ref_l0, ref_l1=ref_l1,
-                                    direct_8x8=direct, weighted_bipred=bipred)
-                        with tempfile.NamedTemporaryFile(suffix='.h264', delete=False) as tmp:
-                            tmp_path = tmp.name
-                        try:
-                            _write_annex_b_stream(filepath, test_nals,
-                                                  [_build_h264_sps(cand)],
-                                                  [_build_h264_pps(cand)], tmp_path)
-                            problems, frames = _decode_stats(
-                                ['-f', 'h264', '-i', tmp_path], 60)
-                        finally:
-                            os.unlink(tmp_path)
-                        if best is None or (problems, -frames) < best[0]:
-                            best = ((problems, -frames), cand)
-                        if problems == 0:
-                            break
-                    if best[0][0] == 0:
-                        break
-                if best[0][0] == 0:
-                    break
+            cands = [dict(params, ref_l0=r0, ref_l1=r1, direct_8x8=direct,
+                          weighted_bipred=bipred)
+                     for bipred in bipreds for r0 in ref_counts
+                     for r1 in l1_counts for direct in (1, 0)]
+            results = _trial_map(
+                lambda c: _trial_decode(filepath, test_nals, c), cands,
+                stop=lambda r: r[0] == 0)
+            best = min(((r[0], -r[1]), i) for i, r in enumerate(results) if r)
+            best = (best[0], cands[best[1]])
             if group_best is None or best[0] < group_best[0]:
                 group_best = best
             if best[0][0] == 0:
