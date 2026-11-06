@@ -2081,6 +2081,41 @@ def _get_donor_rotation(donor_path):
     return None
 
 
+# Rotations the user can pick, in degrees clockwise. ffmpeg's display
+# rotation counts counter-clockwise: an iPhone portrait clip reads -90.
+_ROTATIONS = (0, 90, 180, 270)
+
+
+def _read_rotation(path):
+    """Clockwise display rotation of a video file (0 when it has none)."""
+    rotation = _get_donor_rotation(path)
+    return (-rotation) % 360 if rotation else 0
+
+
+def _apply_rotation(path, clockwise):
+    """Set a video file's display rotation in place, without re-encoding.
+
+    Rotation lives in the container (the track's display matrix), so this is
+    a quick remux. Damaged files lose it along with the moov, and a donor's
+    is only a guess, so the user can correct it.
+    """
+    stem, ext = os.path.splitext(path)
+    tmp_path = stem + '.rotating' + ext
+    try:
+        r = subprocess.run(
+            [_ffmpeg_path, '-y', '-v', 'error',
+             '-display_rotation:v:0', str((-clockwise) % 360),
+             '-i', path, '-map', '0', '-c', 'copy', '-movflags', '+faststart',
+             tmp_path], capture_output=True, timeout=600)
+        if r.returncode != 0:
+            raise ValueError('Could not set rotation: '
+                             + r.stderr.decode(errors='replace')[-200:])
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 # ─── Parameter inference (trial decoding) ────────────────────────────────────
 #
 # When no donor's SPS/PPS decodes a moov-less H.264 file, build them from
@@ -4413,8 +4448,12 @@ def recover_avi(filepath, output_dir=None):
     return out_path, 'avi_salvage'
 
 
-def _execute_recovery(filepath, donor_override='', output_dir=''):
-    """Run recovery on a single file. Returns result dict on success."""
+def _execute_recovery(filepath, donor_override='', output_dir='', rotation=None):
+    """Run recovery on a single file. Returns result dict on success.
+
+    rotation: degrees clockwise to set on the output, or None to keep what
+    the recovery chose (a matching donor's rotation, if any).
+    """
     fdir = os.path.dirname(filepath)
     _ensure_donor_pool(fdir)
 
@@ -4457,6 +4496,9 @@ def _execute_recovery(filepath, donor_override='', output_dir=''):
     else:
         out_path, method = recover_no_moov(
             filepath, donor_path, output_dir)
+
+    if rotation is not None:
+        _apply_rotation(out_path, rotation)
 
     out_size = os.path.getsize(out_path)
 
@@ -4509,6 +4551,7 @@ def _execute_recovery(filepath, donor_override='', output_dir=''):
         'recovery_pct': recovery_pct,
         'original_size': original_size,
         'video_only': not has_audio,
+        'rotation': _read_rotation(out_path),
     }
     # A file decoded with its own or inferred SPS/PPS didn't use the donor
     if donor_auto and 'embedded' not in method and 'inferred' not in method:
@@ -4646,7 +4689,8 @@ def _recovery_worker():
             _recover_jobs[job_id]['started_at'] = time.time()
         try:
             result = _execute_recovery(
-                job['filepath'], job.get('donor', ''), job.get('output_dir', ''))
+                job['filepath'], job.get('donor', ''), job.get('output_dir', ''),
+                job.get('rotation'))
             with _recover_lock:
                 _recover_jobs[job_id]['status'] = 'done'
                 _recover_jobs[job_id]['result'] = result
@@ -4752,6 +4796,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 self._handle_recover_queue_clear()
             elif path == '/api/recover-cancel':
                 self._handle_recover_cancel()
+            elif path == '/api/rotate-output':
+                self._handle_rotate_output()
             elif path == '/api/load-scan':
                 self._handle_load_scan()
             elif path == '/api/add-donor-folder':
@@ -5010,6 +5056,9 @@ class FrameHandler(SimpleHTTPRequestHandler):
         if error:
             return self._send_json({'ok': False, 'error': error,
                                     'error_kind': 'output_dir'}, 400)
+        rotation = data.get('rotation')
+        if rotation is not None and rotation not in _ROTATIONS:
+            return self._send_json({'ok': False, 'error': 'Invalid rotation'}, 400)
 
         with _recover_lock:
             for j in _recover_jobs.values():
@@ -5025,6 +5074,7 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 'filename': os.path.basename(filepath),
                 'donor': donor,
                 'output_dir': output_dir,
+                'rotation': rotation,
                 'status': 'queued',
                 'queued_at': time.time(),
                 'started_at': None,
@@ -5043,6 +5093,29 @@ class FrameHandler(SimpleHTTPRequestHandler):
             jobs = sorted(_recover_jobs.values(),
                           key=lambda j: int(j['id']))
         self._send_json({'jobs': jobs})
+
+    def _handle_rotate_output(self):
+        # Change a recovered file's rotation without recovering it again.
+        # Only files this session's recoveries wrote can be changed.
+        data = self._read_json_body()
+        output = data.get('output', '')
+        rotation = data.get('rotation')
+        if rotation not in _ROTATIONS:
+            return self._send_json({'error': 'Invalid rotation'}, 400)
+        with _recover_lock:
+            job = next((j for j in _recover_jobs.values()
+                        if j['status'] == 'done' and j.get('result')
+                        and j['result'].get('output') == output), None)
+        if not job or not os.path.isfile(output):
+            return self._send_json({'error': 'Recovered file not found'}, 404)
+        try:
+            _apply_rotation(output, rotation)
+        except Exception as e:
+            return self._send_json({'error': str(e)}, 500)
+        with _recover_lock:
+            job['result']['rotation'] = _read_rotation(output)
+            job['result']['size'] = os.path.getsize(output)
+        self._send_json({'ok': True, 'rotation': job['result']['rotation']})
 
     def _handle_recover_cancel(self):
         # Only jobs still waiting can be cancelled; the worker skips them
