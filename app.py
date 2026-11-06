@@ -44,6 +44,9 @@ donor_map = {}
 donor_pool = {}
 
 # Recovery queue infrastructure
+# Where recovered files go unless the user picks another folder
+DEFAULT_OUTPUT_DIR = os.path.expanduser('~/Downloads')
+
 _recover_queue = queue_mod.Queue()
 _recover_jobs = {}
 _recover_lock = threading.Lock()
@@ -4401,7 +4404,7 @@ def _execute_recovery(filepath, donor_override='', output_dir=''):
         donor_path = ''
 
     if not output_dir:
-        output_dir = os.path.expanduser('~/Downloads')
+        output_dir = DEFAULT_OUTPUT_DIR
 
     with open(filepath, 'rb') as f:
         head = f.read(12)
@@ -4582,6 +4585,23 @@ def _source_hints(filepath):
     return hints
 
 
+def _check_output_dir(path):
+    """(absolute folder, error message) for a requested output folder.
+
+    Empty means the default. Checked when a job is queued, so a missing or
+    read-only folder (an unmounted drive, say) fails right away instead of
+    after the recovery has run.
+    """
+    if not path:
+        return DEFAULT_OUTPUT_DIR, None
+    path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isdir(path):
+        return None, f'Output folder not found: {path}'
+    if not os.access(path, os.W_OK):
+        return None, f'Output folder is not writable: {path}'
+    return path, None
+
+
 def _recovery_worker():
     """Daemon thread processing recovery jobs sequentially."""
     while True:
@@ -4596,7 +4616,7 @@ def _recovery_worker():
             _recover_jobs[job_id]['started_at'] = time.time()
         try:
             result = _execute_recovery(
-                job['filepath'], job.get('donor', ''))
+                job['filepath'], job.get('donor', ''), job.get('output_dir', ''))
             with _recover_lock:
                 _recover_jobs[job_id]['status'] = 'done'
                 _recover_jobs[job_id]['result'] = result
@@ -4841,6 +4861,7 @@ class FrameHandler(SimpleHTTPRequestHandler):
             'ffprobe': has_ffprobe(),
             'ffmpeg_path': _ffmpeg_path or '',
             'ffprobe_path': _ffprobe_path or '',
+            'default_output_dir': DEFAULT_OUTPUT_DIR,
         })
 
     def _handle_reveal(self):
@@ -4848,6 +4869,15 @@ class FrameHandler(SimpleHTTPRequestHandler):
         filepath = data.get('filepath', '')
         if not filepath or not os.path.exists(filepath):
             return self._send_json({'error': 'File not found'}, 404)
+
+        # open: show a folder's contents instead of selecting it in its parent
+        if data.get('open') and os.path.isdir(filepath):
+            opener = {'darwin': 'open', 'win32': 'explorer'}.get(sys.platform, 'xdg-open')
+            try:
+                subprocess.Popen([opener, filepath])
+            except Exception as e:
+                return self._send_json({'error': str(e)}, 500)
+            return self._send_json({'ok': True})
 
         try:
             if sys.platform == 'darwin':
@@ -4923,10 +4953,12 @@ class FrameHandler(SimpleHTTPRequestHandler):
         data = self._read_json_body()
         filepath = data.get('filepath', '')
         donor_override = data.get('donor', '')
-        output_dir = data.get('output_dir', '')
 
         if not filepath or not os.path.exists(filepath):
             return self._send_json({'error': 'File not found'}, 404)
+        output_dir, error = _check_output_dir(data.get('output_dir', ''))
+        if error:
+            return self._send_json({'error': error}, 400)
 
         try:
             resp = _execute_recovery(filepath, donor_override, output_dir)
@@ -4944,6 +4976,10 @@ class FrameHandler(SimpleHTTPRequestHandler):
 
         if not filepath or not os.path.exists(filepath):
             return self._send_json({'error': 'File not found'}, 404)
+        output_dir, error = _check_output_dir(data.get('output_dir', ''))
+        if error:
+            return self._send_json({'ok': False, 'error': error,
+                                    'error_kind': 'output_dir'}, 400)
 
         with _recover_lock:
             for j in _recover_jobs.values():
@@ -4958,6 +4994,7 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 'filepath': filepath,
                 'filename': os.path.basename(filepath),
                 'donor': donor,
+                'output_dir': output_dir,
                 'status': 'queued',
                 'queued_at': time.time(),
                 'started_at': None,

@@ -81,6 +81,12 @@
       <button class="btn-danger" id="cancel-btn" onclick="cancelScan()" disabled>Cancel</button>
     </div>
     <div id="mount-status" class="mount-status" style="display:none"></div>
+    <div id="output-row" class="prev-scans-row">
+      <span class="prev-scans-label">Save recovered to</span>
+      <span id="output-dir" class="output-dir"></span>
+      <button class="btn-outline" onclick="openOutputBrowse()">Browse</button>
+      <button class="btn-outline" onclick="showOutputDir()">Show</button>
+    </div>
     <div id="prev-scans-row" class="prev-scans-row" style="display:none">
       <span class="prev-scans-label">Previous scans</span>
       <select id="prev-scans-select" onchange="loadSelectedScan(this)"></select>
