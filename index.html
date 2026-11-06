@@ -154,6 +154,7 @@
   </div>
 
   <div id="export-bar">
+    <button class="btn-outline" onclick="openStatusGuide()">Status guide</button>
     <button class="btn-outline" onclick="exportData('csv')">Export CSV</button>
   </div>
 
@@ -174,8 +175,12 @@
 
   <div id="empty-results">No issues found matching this filter.</div>
 
-  <div class="legend">
-    <h3>Status Guide</h3>
+  <aside id="status-guide" class="guide-drawer" aria-label="Status guide">
+    <div class="guide-head">
+      <h3>Status Guide</h3>
+      <button class="btn-outline icon-btn" onclick="closeStatusGuide()" title="Close" aria-label="Close">&#x2715;</button>
+    </div>
+
     <div class="legend-grid">
       <div class="legend-item">
         <div class="legend-dot dot-no_moov"></div>
@@ -213,18 +218,30 @@
         </div>
       </div>
     </div>
-  </div>
+  </aside>
+
   <div id="queue-panel">
     <div class="queue-header" onclick="if (!event.target.closest('.queue-clear-btn')) this.parentElement.classList.toggle('collapsed')">
-      <span class="queue-title">Recovery Queue</span>
-      <span id="queue-counts" class="queue-counts"></span>
-      <button class="btn-outline queue-clear-btn" onclick="event.stopPropagation();clearCompletedJobs()">Clear Done</button>
-      <span class="queue-collapse-icon">&#x25BC;</span>
+      <div class="queue-head-text">
+        <span class="queue-title">Recovery Queue</span>
+        <span id="queue-counts" class="queue-counts"></span>
+      </div>
+      <div class="queue-head-actions">
+        <button class="btn-outline queue-clear-btn" onclick="event.stopPropagation();clearCompletedJobs()">Clear Done</button>
+        <span class="queue-collapse-icon">&#x25BC;</span>
+      </div>
     </div>
     <div id="queue-body" class="queue-body"></div>
   </div>
 </main>
 
-<script src="/js/app.js"></script>
+<script src="/js/core.js"></script>
+<script src="/js/browse.js"></script>
+<script src="/js/rows.js"></script>
+<script src="/js/scan.js"></script>
+<script src="/js/history.js"></script>
+<script src="/js/recovery.js"></script>
+<script src="/js/mount.js"></script>
+<script src="/js/main.js"></script>
 </body>
 </html>
