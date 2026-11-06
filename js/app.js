@@ -342,6 +342,21 @@ function upsertFolderGroup(dir) {
   document.getElementById('folder-list').insertAdjacentHTML('beforeend', html);
 }
 
+// Rotation picked per file before recovering ('' or absent = Auto: a
+// matching donor's rotation). Degrees clockwise.
+var rotationChoice = {};
+var ROTATION_OPTIONS = [[0, 'No rotation'], [90, '\u21bb 90\u00b0'],
+                        [180, '180\u00b0'], [270, '\u21ba 90\u00b0']];
+
+function rotationSelectHtml(attr, value, title, withAuto) {
+  var opts = (withAuto ? [['', 'Auto']] : []).concat(ROTATION_OPTIONS);
+  return '<select class="rotation-select" ' + attr + ' title="' + escHtml(title) + '">' +
+    opts.map(function(o) {
+      return '<option value="' + o[0] + '"' + (String(o[0]) === String(value) ? ' selected' : '') +
+        '>' + o[1] + '</option>';
+    }).join('') + '</select>';
+}
+
 function buildIssueRowHtml(ev) {
   var rec = recoveredFiles[ev.filepath];
   var dotClass = rec ? 'dot-recovered' : 'dot-' + ev.status;
@@ -375,6 +390,11 @@ function buildIssueRowHtml(ev) {
       parts.push('<div class="rr-item"><span class="rr-label">Audio</span><span class="rr-value rr-warn">No Audio</span></div>');
     }
     actionHtml = '<div class="recovery-result">' + parts.join('') + '</div>';
+    if (rec.output) {
+      actionHtml += rotationSelectHtml('data-rotate-output="' + escHtml(rec.output) + '"' +
+        ' data-rotate-for="' + escHtml(ev.filepath) + '"', rec.rotation || 0,
+        'Rotation of the recovered video (applies right away)', false);
+    }
   } else {
     var canRecover = ((ev.status === 'no_moov' || ev.status === 'corrupt') &&
       !(ev.details && ev.details.unrecoverable)) ||
@@ -388,8 +408,13 @@ function buildIssueRowHtml(ev) {
     var copyBtn = intactCopy
       ? '<button class="copy-path-btn" data-reveal="' + escHtml(intactCopy) + '">Show Intact Copy</button>'
       : '';
+    var rotation = canRecover
+      ? rotationSelectHtml('data-rotation-for="' + escHtml(ev.filepath) + '"',
+          rotationChoice[ev.filepath] === undefined ? '' : rotationChoice[ev.filepath],
+          'Rotation for the recovered video (Auto: from a matching donor)', true)
+      : '';
     actionHtml = '<button class="copy-path-btn" data-copy="' + escHtml(ev.filepath) + '">Copy Path</button>' +
-      copyBtn + recoverBtn;
+      copyBtn + rotation + recoverBtn;
   }
 
   return '<div class="issue-row">' +
@@ -709,6 +734,43 @@ function cancelQueuedJob(jobId) {
   .catch(function(err) { console.error('Cancelling recovery failed:', err); });
 }
 
+// Rotation pickers: before recovery the choice rides along with the job;
+// after recovery it rewrites the recovered file's rotation in place
+document.addEventListener('change', function(e) {
+  var sel = e.target;
+  if (!sel.classList || !sel.classList.contains('rotation-select')) return;
+  if (sel.hasAttribute('data-rotation-for')) {
+    var path = sel.getAttribute('data-rotation-for');
+    if (sel.value === '') delete rotationChoice[path];
+    else rotationChoice[path] = Number(sel.value);
+    return;
+  }
+  var output = sel.getAttribute('data-rotate-output');
+  var source = sel.getAttribute('data-rotate-for');
+  var previous = String((recoveredFiles[source] || {}).rotation || 0);
+  sel.disabled = true;
+  fetch('/api/rotate-output', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ output: output, rotation: Number(sel.value) }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    sel.disabled = false;
+    if (d.ok) {
+      if (recoveredFiles[source]) recoveredFiles[source].rotation = d.rotation;
+    } else {
+      sel.value = previous;
+      alert(d.error || 'Could not change the rotation.');
+    }
+  })
+  .catch(function(err) {
+    sel.disabled = false;
+    sel.value = previous;
+    console.error('Changing rotation failed:', err);
+  });
+});
+
 document.addEventListener('click', function(e) {
   var cancelTarget = e.target.closest('[data-cancel-job]');
   if (cancelTarget) {
@@ -785,6 +847,7 @@ function recoverVideo(btn) {
   var body = { filepath: filepath };
   if (donor) body.donor = donor;
   if (outputDir) body.output_dir = outputDir;
+  if (rotationChoice[filepath] !== undefined) body.rotation = rotationChoice[filepath];
 
   fetch('/api/recover-queue', {
     method: 'POST',
@@ -990,7 +1053,8 @@ function updateInlineRows(jobs) {
         original_size: job.result.original_size,
         donor_used: job.result.donor_used,
         output: job.result.output,
-        video_only: job.result.video_only
+        video_only: job.result.video_only,
+        rotation: job.result.rotation
       };
       var ev = null;
       Object.values(folderData).forEach(function(fd) {
