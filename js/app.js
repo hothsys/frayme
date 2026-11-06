@@ -11,6 +11,8 @@ async function checkFfmpeg() {
     const r = await fetch('/api/status');
     const d = await r.json();
     ffmpegAvailable = d.ffmpeg;
+    defaultOutputDir = d.default_output_dir || '';
+    showOutputLabel();
     var badge = document.getElementById('ffmpeg-badge');
     if (d.ffmpeg) {
       badge.textContent = 'ffmpeg ready';
@@ -38,6 +40,55 @@ var browseCurrentPath = '/';
 // Damaged file whose donor folder is being chosen; null when the browser
 // picks the scan directory
 var donorFolderFor = null;
+// True while the browser picks the folder recovered videos are saved to
+var choosingOutput = false;
+
+// Output folder for recovered videos: the user's choice (remembered in this
+// browser), else the server's default (~/Downloads)
+var defaultOutputDir = '';
+var outputDir = '';
+try { outputDir = localStorage.getItem('outputDir') || ''; } catch(e) {}
+
+function currentOutputDir() {
+  return outputDir || defaultOutputDir;
+}
+
+function setOutputDir(path) {
+  outputDir = (path && path !== defaultOutputDir) ? path : '';
+  try {
+    if (outputDir) localStorage.setItem('outputDir', outputDir);
+    else localStorage.removeItem('outputDir');
+  } catch(e) {}
+  showOutputLabel();
+}
+
+function showOutputLabel() {
+  var el = document.getElementById('output-dir');
+  var dir = currentOutputDir();
+  el.textContent = dir ? dir + (outputDir ? '' : '  (default)') : 'Downloads folder';
+  el.title = dir;
+}
+
+function showOutputDir() {
+  fetch('/api/reveal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filepath: currentOutputDir(), open: true }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) alert('Could not open ' + currentOutputDir() + ': ' + d.error);
+  })
+  .catch(function(err) { console.error('Opening the output folder failed:', err); });
+}
+
+function openOutputBrowse() {
+  choosingOutput = true;
+  document.querySelector('#browse-overlay .browse-top h3').textContent =
+    'Choose a Folder for Recovered Videos';
+  document.getElementById('browse-overlay').classList.add('open');
+  browseTo(currentOutputDir() || '/Volumes');
+}
 
 function openBrowse() {
   document.getElementById('browse-overlay').classList.add('open');
@@ -56,10 +107,16 @@ function openDonorBrowse(filepath) {
 function closeBrowse() {
   document.getElementById('browse-overlay').classList.remove('open');
   donorFolderFor = null;
+  choosingOutput = false;
   document.querySelector('#browse-overlay .browse-top h3').textContent = 'Choose Directory';
 }
 
 function selectBrowseDir() {
+  if (choosingOutput) {
+    setOutputDir(browseCurrentPath);
+    closeBrowse();
+    return;
+  }
   if (donorFolderFor) {
     addDonorFolder(donorFolderFor, browseCurrentPath);
     closeBrowse();
@@ -727,6 +784,7 @@ function recoverVideo(btn) {
 
   var body = { filepath: filepath };
   if (donor) body.donor = donor;
+  if (outputDir) body.output_dir = outputDir;
 
   fetch('/api/recover-queue', {
     method: 'POST',
@@ -739,6 +797,11 @@ function recoverVideo(btn) {
       btn.textContent = 'Queued';
       showQueuePanel();
       startQueuePolling();
+    } else if (d.error_kind === 'output_dir') {
+      // Too long for the button, and it applies to every file
+      alert(d.error + '\n\nChoose another folder with Browse next to "Save recovered to".');
+      btn.textContent = 'Recover';
+      btn.disabled = false;
     } else {
       btn.textContent = d.error || 'Failed';
       btn.style.color = 'var(--red)';
@@ -857,7 +920,10 @@ function updateQueuePanel(jobs) {
       : '';
     return '<div class="queue-item ' + statusClass + '">' +
       '<span class="queue-status-icon">' + icon + '</span>' +
-      '<span class="queue-filename">' + escHtml(job.filename) + '</span>' +
+      (job.status === 'done' && job.result && job.result.output
+        ? '<a class="queue-filename" data-reveal="' + escHtml(job.result.output) +
+          '" title="Show ' + escHtml(job.result.output) + ' in Finder">' + escHtml(job.filename) + '</a>'
+        : '<span class="queue-filename">' + escHtml(job.filename) + '</span>') +
       '<span class="queue-detail">' + detail + '</span>' +
       '<span class="queue-status-label">' + job.status.toUpperCase() + '</span>' +
       cancel +
