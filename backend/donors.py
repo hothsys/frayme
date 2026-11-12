@@ -52,7 +52,6 @@ def _collect_sps_candidates(fdir, primary_params, codec='h264'):
 
 def _find_matching_donor(filepath, candidates):
     """Pick the best donor from candidates by filename prefix matching."""
-    import re
     base = os.path.splitext(os.path.basename(filepath))[0]
     # Strip trailing digits/underscores to get the device/naming prefix
     prefix = re.sub(r'[_\-]?\d+$', '', base)
@@ -101,7 +100,6 @@ def _most_common_rate_donor(donors):
     1080p SPS at 120 fps), and a moov-less file has no timing of its own, so
     the most common rate among matching donors is the best guess.
     """
-    import collections
     rates = {}
     for donor in donors:
         try:

@@ -47,7 +47,6 @@ def analyze_mdat(filepath, mdat_offset, mdat_size):
     # Check if mdat uses length-prefixed NALs (MP4 style) vs start-code (Annex B)
     # MP4 style: 4-byte big-endian length + NAL data
     # Annex B: 00 00 00 01 + NAL data
-    is_annex_b = False
     nal_count = 0
     has_sps = False
     has_pps = False
@@ -110,7 +109,6 @@ def analyze_mdat(filepath, mdat_offset, mdat_size):
                     has_idr = True
 
             nal_count += 1
-            is_annex_b = True
             i += 4
         else:
             i += 1
@@ -136,8 +134,6 @@ def _walk_avi(filepath):
     an invalid tag or a size past the end of the file is where the data stops
     being this video.
     """
-    import mmap
-    import re
     valid_id = re.compile(rb'(\d\d(dc|db|wb|pc|tx)|ix\d\d|JUNK)$')
     with open(filepath, 'rb') as f:
         if os.fstat(f.fileno()).st_size < 12:
@@ -210,7 +206,6 @@ def _check_other_format(filepath, details):
 
     Reports files ffmpeg can't open or decode; recovery isn't supported.
     """
-    import re
     details['unrecoverable'] = True
     if not has_ffprobe():
         return 'ok', None, details
@@ -243,7 +238,8 @@ def _check_other_format(filepath, details):
                     'Recovery is not supported for this format.',
                     details)
         if has_ffmpeg():
-            problems, _ = _decode_stats(['-t', '3', '-i', filepath], timeout=60)
+            problems, _ = _decode_stats(['-t', '3', '-i', filepath], timeout=60,
+                                        count_errors=False)
             if problems:
                 return ('corrupt',
                         f'Decode errors in the first seconds ({problems}). '
@@ -473,6 +469,9 @@ def check_video(filepath, should_stop=None):
                         details)
 
             nz_pct = round(nonzero_bytes / file_size * 100, 1)
+            if Path(filepath).suffix.lower() in OTHER_VIDEO_EXTS:
+                # Recovery only understands MP4/MOV and AVI data
+                details['unrecoverable'] = True
             return ('corrupt',
                     f'Leading zeros — first {zero_end:,} bytes ({zero_pct:.0f}%) '
                     f'are zeroed. {nonzero_bytes:,} bytes ({nz_pct}%) of '

@@ -181,7 +181,6 @@ def _order_regularity(slices, log2_fn, poc_type, log2_poc):
         return fn_reg
     # Rebuild POCs (with wraps) and check that within each IDR run the
     # sorted counts are evenly spaced, B-frames or not
-    import collections
     max_lsb = 1 << log2_poc
     runs, run, prev_msb, prev_lsb = [], [], 0, 0
     for is_idr, is_ref, _, lsb in pics:
@@ -280,7 +279,6 @@ def _keyframe_mbs_decoded(filepath, keyframe, params, check_bottom=False):
     taller than the recording sometimes decodes "cleanly" with its extra
     rows left at zero instead of being reported as concealed.
     """
-    import re
     import tempfile
     with tempfile.NamedTemporaryFile(suffix='.h264', delete=False) as out:
         tmp_path = out.name
@@ -327,7 +325,6 @@ def _keyframe_jump(filepath, nal_entries, params):
     the same with any quantizer, so this is how it is found there. Returns
     None with fewer than two keyframes.
     """
-    import statistics
     import tempfile
     w, h = 160, 90
     pictures = []
@@ -368,7 +365,6 @@ def _trial_map(fn, items, stop=None):
     stop(result) holds for any result in it (later items stay None). Picking
     the first or best result in item order then matches a sequential loop.
     """
-    from concurrent.futures import ThreadPoolExecutor
     results = [None] * len(items)
     with ThreadPoolExecutor(_TRIAL_WORKERS) as pool:
         for start in range(0, len(items), _TRIAL_WORKERS):
@@ -541,9 +537,26 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
             if best[0][0] == 0:
                 break
         problems, frames = group_best[0][0], -group_best[0][1]
-        # Damage in the data shows up here too; the full recovery is
-        # checked strictly afterwards, so only reject clearly wrong settings
-        if frames and problems <= frames * 0.25 + 2:
+        if problems:
+            # The default reference count (the most the level allows) breaks
+            # streams that drop references explicitly. The smallest count
+            # that decodes cleanly is the encoder's; fewer drop references
+            # it still uses.
+            counts = [dict(group_best[1], num_ref_frames=n) for n in range(1, 16)]
+            results = _trial_map(
+                lambda c: _trial_decode(filepath, test_nals, c), counts,
+                stop=lambda r: r[0] == 0)
+            tried = [((r[0], -r[1]), i) for i, r in enumerate(results) if r]
+            if tried:
+                best = min(tried)
+                if best[0] < group_best[0]:
+                    group_best = (best[0], counts[best[1]])
+                    problems, frames = best[0][0], -best[0][1]
+        # Damage in the data shows up here too (a damaged first keyframe
+        # breaks every frame up to the next one, whatever the settings); the
+        # full recovery is checked strictly afterwards, so only reject
+        # clearly wrong settings, which fail on nearly every frame
+        if frames and problems <= frames * 0.5 + 2:
             p = group_best[1]
             return [], [_build_h264_sps(p)], [_build_h264_pps(p)]
     return None

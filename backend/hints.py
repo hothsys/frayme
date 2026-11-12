@@ -25,8 +25,6 @@ def _source_hints(filepath):
     Returns {'camera': [(name, strong)], 'dates': [YYYY-MM-DD, ...],
     'resolution': 'WxH' or None}.
     """
-    import re
-    import collections
     hints = {'camera': [], 'dates': [], 'resolution': None}
     try:
         with open(filepath, 'rb') as f:
