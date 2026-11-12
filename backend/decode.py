@@ -6,7 +6,7 @@ import subprocess
 from .tools import _ffmpeg_path, _ffprobe_path
 
 
-def _decode_stats(input_args, timeout):
+def _decode_stats(input_args, timeout, count_errors=True):
     """Decode with ffmpeg; return (problems, frames_decoded).
 
     problems counts error lines plus concealment notices. Concealment
@@ -17,14 +17,19 @@ def _decode_stats(input_args, timeout):
     problems: with a wrong SPS most frames can fail to decode at all, and a
     file that decodes nothing has no errors.
     """
-    import re
     result = subprocess.run(
         [_ffmpeg_path, '-hide_banner', '-loglevel', 'level+info']
         + input_args + ['-f', 'null', '-'],
         capture_output=True, timeout=timeout)
     lines = result.stderr.decode(errors='replace').splitlines()
+    # Decoder messages carry a context prefix ("[h264 @ 0x...] [error] ..."),
+    # so the level tag can't be matched at the start of the line.
+    # count_errors=False counts only concealment (damaged picture data): a
+    # healthy stream that starts between keyframes, such as a TS recording
+    # joined mid-broadcast, logs errors until its first keyframe.
     problems = sum(1 for line in lines
-                   if line.startswith(('[error]', '[fatal]')) or 'concealing' in line)
+                   if 'concealing' in line
+                   or (count_errors and ('[error]' in line or '[fatal]' in line)))
     frames = 0
     for line in lines:
         match = re.search(r'frame=\s*(\d+)', line)

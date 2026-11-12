@@ -99,12 +99,13 @@ Leave the window open while you use Frayme, and press **Ctrl+C** in it to stop. 
 
 When a video has raw media data (`mdat`) but is missing its metadata index (`moov`):
 
-1. Scans the mdat for length-prefixed H.264 NAL units
-2. Collects all unique SPS/PPS parameter sets from healthy files in the same directory
-3. Probes each candidate by test-decoding against the actual video data to find the correct resolution match
+1. Scans the mdat for length-prefixed H.264 or HEVC NAL units, skipping the audio interleaved between them and any unrelated data
+2. Uses the file's own SPS/PPS parameter sets if it carries them, and collects all unique ones from healthy donor files
+3. Probes each candidate by test-decoding against the actual video data to find the correct match; for H.264 with no matching donor, infers the parameters from the frames themselves (trial decoding)
 4. Trims to the first IDR keyframe (skips orphaned P/B-frames that cause playback failures)
-5. Filters out zero-corrupted NALs and skips subsequent frames until the next keyframe
+5. Filters out damaged NALs, and skips frames until the next keyframe wherever reference frames are missing
 6. Wraps the clean Annex-B stream with FFmpeg at the correct framerate
+7. Decode-tests the result. If it fails as a whole (for example, a carved file holding stretches of another recording), keeps only the groups of pictures that decode cleanly on their own
 
 ### Moov Transplant (Fallback)
 
@@ -112,18 +113,21 @@ If raw NAL extraction isn't possible, grafts the moov atom from a healthy donor 
 
 ### Leading Zeros Recovery
 
-For files with zeroed-out headers, Frayme tries multiple strategies in order:
+For files with zeroed-out headers, Frayme tries multiple strategies in order, and no donor is needed unless the parameter sets can't be found or inferred:
 
-1. **Moov-at-end recovery**: if the moov survived at the end of the file, trims damaged chunks and rebuilds
-2. **MP4 structure survival**: extracts valid boxes after the zero region
-3. **Raw NAL extraction**: same pipeline as no-moov recovery, using donor SPS/PPS
+1. **Moov-at-end recovery**: if the moov survived at the end of the file, trims damaged chunks and rebuilds (keeps audio)
+2. **MP4 structure survival**: if only whole boxes were zeroed (typically the ftyp), replaces them in place so the moov's offsets stay valid (keeps everything)
+3. **Raw NAL extraction**: same pipeline as no-moov recovery, over the data after the zeros
 4. **Zero strip**: last resort
+
+Every result, from any strategy, must pass the same decode test, so a file that merely looks valid is never reported as recovered.
 
 ## Project Structure
 
 ```
 frayme/
-  app.py            # Server, scanner, and recovery engine
+  app.py            # Entry point: starts the server
+  backend/          # Server, scanner, and recovery engine (Python standard library only)
   index.html        # Web UI
   logo.svg          # App logo (source for all icons)
   favicon.*, apple-touch-icon.png   # Browser icons, generated from logo.svg
@@ -134,16 +138,48 @@ frayme/
   Frayme.command    # macOS double-click launcher (Terminal window)
   launcher/         # Frayme.app source and icon generator
   app.conf          # Port setting (default PORT=5901)
+  tests/            # Test suite and real-file regression script
 ```
 
 Zero build step. No npm, no pip, no bundler.
 
+## Testing
+
+The test suite generates its own damaged videos, so no video files are checked in. Each run encodes a few short clips from FFmpeg's built-in test patterns into a temporary folder, damages copies of them the way real files get damaged (a lost moov, a zeroed header, a cut-off tail, another file's data in the middle, a stretch of a different recording), and recovers them. A recovery only passes if its output actually decodes: matching metadata is not enough.
+
+```sh
+python3 -m unittest discover tests          # everything, about a minute
+python3 -m unittest tests.test_recovery     # one module
+```
+
+It needs FFmpeg built with libx264 (Homebrew's is); HEVC tests also use libx265 and are skipped without it. Everything is written to the system temp folder and removed afterwards; nothing goes to Downloads, and the damaged originals are checked to be unchanged after every recovery.
+
+| Module | Covers |
+|--------|--------|
+| `test_detect.py` | Status for each kind of damage, and which files get a Recover button |
+| `test_recovery.py` | Every recovery engine: missing moov (with and without a donor, B-frames), zeroed headers, carved files, AVI, HEVC, rotation, output folder checks |
+| `test_queue_and_scan.py` | The scan generator and the recovery queue (jobs, cancel, rotation, failures) |
+| `test_server.py` | The HTTP server: static files, JSON endpoints, the scan event stream |
+| `test_engine.py` | The decode check and the NAL scanner |
+
+Known limitations are kept as expected failures, so they show up as an "unexpected success" once fixed.
+
+Synthetic clips can't reproduce everything real cameras and carving tools do, so changes to the recovery engine should also be checked against real damaged files. `tests/regression.py` scans a folder the way the app does, recovers everything it would offer to recover (into a temporary folder), and decode-tests the results. Save a run before a change and compare after:
+
+```sh
+python3 tests/regression.py ~/damaged-videos --donors ~/healthy-videos --save before.json
+# ...change the engine...
+python3 tests/regression.py ~/damaged-videos --donors ~/healthy-videos --compare before.json
+```
+
+`--compare` lists every file whose outcome, method or frame count changed, and exits with status 1 if any recovery got worse. Your files stay where they are; only the script is part of the project.
+
 ## Limitations
 
-- Recovery is best-effort and depends on having a compatible donor file
-- Recovered files are video-only (audio tracks are not recovered)
-- Files with corrupted mdat (actual video data damage) will have gaps at keyframe boundaries
-- Multi-mode cameras (e.g., GoPro 4K and 1080p) require SPS probing to match the correct resolution
+- Recovery is best-effort. Without a donor, H.264 parameters are inferred from the frames, but HEVC needs a donor from the same camera and mode
+- Recovered files from raw extraction are video-only (audio is kept for AVI salvage and when the moov survives)
+- Damaged stretches are dropped up to the next keyframe, so recovered videos can have gaps
+- A file mixing two recordings (common in carved files) keeps only the parts its parameters decode; without a donor, inference may fail on such files
 
 ## License
 

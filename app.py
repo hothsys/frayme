@@ -16,7 +16,6 @@ from http.server import ThreadingHTTPServer
 
 from backend.server import FrameHandler
 
-
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':

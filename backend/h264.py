@@ -197,6 +197,29 @@ def _h264_slice_poc_lsb(nal, sps_by_id, pps_by_id):
     return lsb, 1 << sps['log2_max_poc_lsb']
 
 
+def _h264_slice_frame_num(nal, sps_by_id, pps_by_id):
+    """(frame_num, max_frame_num) from an H.264 slice header, or None when the
+    parameter sets are unknown or the slice is a field."""
+    d = _rbsp(nal, 32)
+    bit = 8
+    _, bit = _read_ue(d, bit)                  # first_mb_in_slice
+    _, bit = _read_ue(d, bit)                  # slice_type
+    pps_id, bit = _read_ue(d, bit)
+    sps = sps_by_id.get(pps_by_id.get(pps_id))
+    if sps is None:
+        return None
+    if sps['separate_colour_plane']:
+        _, bit = _read_bits(d, bit, 2)
+    frame_num, bit = _read_bits(d, bit, sps['log2_max_frame_num'])
+    if frame_num is None:
+        return None
+    if not sps['frame_mbs_only']:
+        field_pic, _ = _read_bits(d, bit, 1)
+        if field_pic is None or field_pic:
+            return None
+    return frame_num, 1 << sps['log2_max_frame_num']
+
+
 def _plausible_slice_header(header, codec):
     """Check the first slice header fields of a slice NAL (header includes the NAL header)."""
     if codec == 'hevc':
@@ -238,8 +261,6 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
     header to skip). Used for leading-zero recovery where the box header
     was destroyed.
     """
-    import mmap
-    import re
 
     max_sizes = _HEVC_NAL_MAX if codec == 'hevc' else _H264_NAL_MAX
     header_size = 2 if codec == 'hevc' else 1
@@ -325,18 +346,22 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
             return True
 
         # With 4-byte lengths, a regex finds candidate positions at C speed:
-        # length < 8 MB (top byte 0) followed by a NAL header of a valid type
+        # length < 8 MB (top byte 0) followed by a NAL header of a valid type.
+        # The pattern is a lookahead so matches can overlap: a false match
+        # in audio data that starts a byte or two before a real frame would
+        # otherwise hide that frame, and losing a reference frame breaks
+        # every frame up to the next keyframe.
         candidate_re = None
         if nal_length_size == 4:
             if codec == 'hevc':
                 first = bytes(sorted({t << 1 for t in max_sizes}))
                 candidate_re = re.compile(
-                    rb'\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb'][\x01-\x07]')
+                    rb'(?=\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb'][\x01-\x07])')
             else:
                 first = bytes(sorted({(ref << 5) | t
                                       for ref in range(4) for t in max_sizes}))
                 candidate_re = re.compile(
-                    rb'\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb']')
+                    rb'(?=\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb'])')
 
         def next_chain(start):
             if candidate_re is not None:
@@ -418,9 +443,53 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                     return cand
             return None
 
+        idr_types = (19, 20) if codec == 'hevc' else (5,)
+
+        def next_keyframe(start):
+            # Last resort when no chain lies ahead: in files with audio after
+            # every frame, chains only occur where a frame happens to carry
+            # an SEI or parameter sets, often just at the very start. If that
+            # stretch is lost (zeroed header, foreign data in a carved file),
+            # anchor on a keyframe slice instead: the first slice of an IDR
+            # picture with a clean payload, followed by three more frames that
+            # fit the same stream. The decode check still judges the result.
+            if candidate_re is None:
+                return None
+            for match in candidate_re.finditer(m, start, data_end):
+                cand = match.start()
+                nal_len = nal_length(cand)
+                if nal_len is None:
+                    continue
+                hdr_pos = cand + nal_length_size
+                nal_type = ((m[hdr_pos] >> 1) & 0x3F if codec == 'hevc'
+                            else m[hdr_pos] & 0x1F)
+                if nal_type not in idr_types or not clean_payload(cand, nal_len):
+                    continue
+                head = m[hdr_pos:hdr_pos + 16]
+                if codec == 'hevc':
+                    first = head[2] & 0x80
+                    pps_id, _ = _read_ue(head, 18)
+                else:
+                    first_mb, bit = _read_ue(head, 8)
+                    _, bit = _read_ue(head, bit)
+                    pps_id, _ = _read_ue(head, bit)
+                    first = first_mb == 0
+                if not first or pps_id is None:
+                    continue
+                known = set(profile['pps_ids'])
+                if known and pps_id not in known:
+                    continue
+                profile['pps_ids'].add(pps_id)
+                if next_lone(cand + nal_length_size + nal_len, hops=2) is not None:
+                    return cand
+                profile['pps_ids'] = known
+            return None
+
         nal_entries = []
         pos = next_chain(data_start)
         trusted = True                 # pos came from a full chain
+        if pos is None:
+            pos, trusted = next_keyframe(data_start), False
         while pos is not None and pos < data_end - nal_length_size:
             nal_len = nal_length(pos)
             if nal_len is not None:
@@ -433,7 +502,11 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                 if lone is not None:
                     pos, trusted = lone, False
                 else:
-                    pos, trusted = next_chain(pos + 1), True
+                    resume = next_chain(pos + 1)
+                    if resume is None:
+                        pos, trusted = next_keyframe(pos + 1), False
+                    else:
+                        pos, trusted = resume, True
         return nal_entries
     finally:
         m.close()
@@ -444,7 +517,6 @@ def _find_param_nal(block, start, end, nal_type, codec):
 
     Returns (nal_bytes, end_offset) or None.
     """
-    import re
     if codec == 'hevc':
         pattern = rb'\x00\x00([\x00-\x03][\s\S])(' + re.escape(bytes([nal_type << 1])) + rb')\x01'
     else:
@@ -476,7 +548,6 @@ def _find_inband_params(filepath, mdat_offset, nal_entries, codec='h264'):
     None when no SPS and PPS are found. These match the recording exactly,
     unlike a donor's, so a file can be recovered even without a donor.
     """
-    import re
     if codec == 'hevc':
         kinds = {32: 'vps', 33: 'sps', 34: 'pps'}
         get_type = lambda b: (b >> 1) & 0x3F
@@ -585,7 +656,6 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
     if not test_nals:
         return (candidates[0], None) if return_score else candidates[0]
 
-    import tempfile
     START_CODE = b'\x00\x00\x00\x01'
     best = candidates[0]
     best_errors = float('inf')
@@ -660,6 +730,9 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
     Skips NALs before the first IDR keyframe (P/B-frames without a reference
     produce decode errors that break playback). Prepends VPS/SPS/PPS, re-emits
     them before each IDR for decoder robustness.
+    H.264 frames whose frame_num shows that reference frames are missing
+    (a stretch lost to damage, which can be shorter than an audio chunk, so
+    the distance between NALs can't tell) are skipped up to the next IDR.
     Returns the number of NALs written. If pictures is a list, H.264
     pictures are appended to it in decode order as (is_idr, is_reference,
     poc_lsb, max_poc_lsb) for _apply_presentation_order; poc_lsb is None
@@ -710,9 +783,10 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
 
         need_keyframe = False
         prev_end = None
-        # Parameter sets by id, for reading picture order from slice headers
+        # Parameter sets by id, for reading frame_num and picture order from
+        # slice headers
         sps_by_id, pps_by_id = {}, {}
-        if pictures is not None and codec != 'hevc':
+        if codec != 'hevc':
             for sps in sps_list:
                 info = _parse_h264_sps_order(sps)
                 if info:
@@ -721,6 +795,40 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
                 ids = _parse_h264_pps_ids(pps)
                 if ids:
                     pps_by_id[ids[0]] = ids[1]
+        # frame_num continuity: each picture's frame_num is one more than the
+        # last reference picture's (IDR: 0). Checked only if the stream's
+        # first pictures follow that rule, in case a camera's headers read
+        # differently than expected.
+        def picture_frame_num(data):
+            if codec == 'hevc' or not (len(data) > 1 and data[1] & 0x80):
+                return None
+            return _h264_slice_frame_num(data, sps_by_id, pps_by_id)
+
+        check_frame_num = False
+        picture_fn = None      # frame_num of the picture being written
+        if sps_by_id:
+            prev_ref, follows, total = None, 0, 0
+            for nal_offset, nal_len in nal_entries[first_idr:]:
+                src.seek(nal_offset)
+                data = src.read(min(nal_len, 32))
+                if not data or _get_nal_type(data[0]) not in slice_types | idr_types:
+                    continue
+                fn = picture_frame_num(data)
+                if fn is None:
+                    continue
+                if _get_nal_type(data[0]) in idr_types:
+                    prev_ref = fn[0]
+                    continue
+                if prev_ref is not None:
+                    total += 1
+                    follows += fn[0] == (prev_ref + 1) % fn[1]
+                if data[0] & 0x60:
+                    prev_ref = fn[0]
+                if total >= 200:
+                    break
+            check_frame_num = total >= 10 and follows >= total * 0.95
+        prev_ref = None
+
         # AUD/SEI wait here until their frame is written, so a skipped or
         # missing frame doesn't leave an access unit without a picture
         pending = []
@@ -765,6 +873,26 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
                 first_in_pic = len(data) > 2 and bool(data[2] & 0x80)
             else:
                 first_in_pic = len(data) > 1 and bool(data[1] & 0x80)
+
+            if check_frame_num and first_in_pic:
+                fn = picture_frame_num(data)
+                picture_fn = fn[0] if fn else None
+                if fn is not None:
+                    if nal_type in idr_types:
+                        prev_ref = fn[0]
+                    elif not need_keyframe:
+                        if prev_ref is not None and fn[0] != (prev_ref + 1) % fn[1]:
+                            need_keyframe = True   # references were lost
+                        elif data[0] & 0x60:
+                            prev_ref = fn[0]
+            elif check_frame_num and not first_in_pic:
+                # Further slices of a picture share its frame_num; one that
+                # doesn't (or a few bytes too short to hold a slice header)
+                # is other data that happened to look like a slice
+                fn = _h264_slice_frame_num(data, sps_by_id, pps_by_id)
+                if nal_len < 4 or (fn is not None and picture_fn is not None
+                                   and fn[0] != picture_fn):
+                    continue
 
             if need_keyframe:
                 # HEVC CRA/BLA frames are random access points too
@@ -841,9 +969,12 @@ class _BitWriter:
 def _build_h264_sps(p):
     """SPS NAL for inferred settings: High profile, 4:2:0 8-bit, progressive.
 
-    No VUI: it carries no decoding information. max_num_ref_frames is as
-    large as level 5.1 allows for the frame size, since a larger sliding
-    window than the encoder's decodes the same.
+    No VUI: it carries no decoding information. max_num_ref_frames is
+    p['num_ref_frames'] when inference found it, otherwise as large as level
+    5.1 allows for the frame size: a larger sliding window than the
+    encoder's usually decodes the same, but not for streams that also drop
+    references explicitly (x264's B-pyramid), where kept references then
+    outlive frame_num wrapping.
     """
     mbw, mbh = (p['width'] + 15) // 16, (p['height'] + 15) // 16
     w = _BitWriter()
@@ -865,7 +996,7 @@ def _build_h264_sps(p):
     w.ue(p['poc_type'])
     if p['poc_type'] == 0:
         w.ue(p['log2_max_poc_lsb'] - 4)
-    w.ue(max(1, min(16, 184320 // (mbw * mbh))))
+    w.ue(p.get('num_ref_frames') or max(1, min(16, 184320 // (mbw * mbh))))
     w.u(1, 0)                                  # gaps_in_frame_num
     w.ue(mbw - 1)
     w.ue(mbh - 1)
