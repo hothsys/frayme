@@ -20,6 +20,7 @@
 - Detects missing moov atoms, leading-zero corruption, truncated files, empty files, and invalid container structures
 - Recovers files using raw H.264 NAL extraction with SPS/PPS probing, or moov transplant from a healthy donor file
 - Auto-selects donors by matching filename prefixes, so directories with mixed devices (GoPro, iPhone, Nikon) are handled
+- Explains each damaged file: codec, resolution, camera, what the damage cost (orientation, frame rate, sound) and how much of the file is still video
 - Exports scan results to CSV
 
 ## Requirements
@@ -88,10 +89,12 @@ Leave the window open while you use Frayme, and press **Ctrl+C** in it to stop. 
    | **empty** | 0-byte file |
    | **error** | Permission or OS-level read error |
 
+   Each row also shows what Frayme found: the codec, resolution and camera where it can tell, and a **Details** button that expands a list of notes. A caution icon on the button means there's something to know before trusting a recovery, such as a file whose orientation, frame rate and sound were stored in the missing index. Opening the notes of a damaged MP4/MOV also looks through the whole file and reports how much of it is still video (carved files are often mostly other data). Once recovered, the notes say where the rotation and frame rate came from, how many frames were kept, and anything left to check. Sort the files in each folder by name, size or status with the picker next to the filters.
+
    HEIC/HEIF/AVIF photos saved with a video extension (common inside Photos libraries) are recognized as still images and skipped, not reported as damaged videos.
 
 4. Once the scan finishes, click **Recover** on any file, and Frayme auto-selects a compatible donor from healthy files found during the scan. Recovered videos are saved to the folder shown next to **Save recovered to** (your Downloads folder unless you pick another with **Browse**; **Show** opens it). Clicking a finished job in the Recovery Queue shows its file in Finder. Damaged files lose their rotation, so each row has a rotation picker: **Auto** copies it from a matching donor, or pick one before recovering; on a recovered row, changing it rewrites the recovered file's rotation right away. Recoveries run one at a time in the **Recovery Queue** panel (bottom right), which shows each job's progress; **Clear Done** removes finished and failed jobs, and is greyed out until something has finished. If a recovery fails, the row shows the reason and the button changes to **Retry**
-5. Export results to CSV at any time
+5. Export results to CSV at any time; it includes what Frayme found about each file
 
 ## How Recovery Works
 
@@ -172,7 +175,7 @@ python3 tests/regression.py ~/damaged-videos --donors ~/healthy-videos --save be
 python3 tests/regression.py ~/damaged-videos --donors ~/healthy-videos --compare before.json
 ```
 
-`--compare` lists every file whose outcome, method or frame count changed, and exits with status 1 if any recovery got worse. Your files stay where they are; only the script is part of the project.
+`--compare` lists every file whose outcome, method or frame count changed, and exits with status 1 if any recovery got worse. Add `--keep ~/Desktop/frayme-check` to save the recovered videos there for watching instead of deleting them. Your files stay where they are; only the script is part of the project.
 
 ## Limitations
 

@@ -58,9 +58,22 @@ document.addEventListener('click', function(e) {
     e.preventDefault();
     var path = copyTarget.getAttribute('data-copy');
     navigator.clipboard.writeText(path).then(function() {
-      copyTarget.textContent = 'Copied!';
-      setTimeout(function() { copyTarget.textContent = 'Copy Path'; }, 1200);
+      // A check mark for a moment, then the copy icon again
+      copyTarget.innerHTML = CHECK_ICON;
+      copyTarget.classList.add('copied');
+      setTimeout(function() {
+        copyTarget.innerHTML = COPY_ICON;
+        copyTarget.classList.remove('copied');
+      }, 1200);
     });
+    return;
+  }
+
+  var notesTarget = e.target.closest('[data-notes-toggle]');
+  if (notesTarget) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleRowNotes(notesTarget);
     return;
   }
 

@@ -629,6 +629,85 @@
   .rr-warn {
     color: var(--amber);
   }
+
+  /* What Frayme found: a facts line, and notes behind a toggle */
+  .issue-facts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: var(--text2);
+  }
+  .facts-text { overflow-wrap: anywhere; }
+  .notes-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text2);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.2;
+    padding: 2px 8px;
+    transition: color .15s, border-color .15s;
+  }
+  .notes-btn:hover, .notes-btn[aria-expanded="true"] { color: var(--text); border-color: var(--text3); }
+  .notes-btn.has-warn { color: var(--amber); border-color: rgba(245,166,35,.35); }
+  .notes-btn.has-warn:hover, .notes-btn.has-warn[aria-expanded="true"] {
+    color: var(--amber); border-color: var(--amber); background: var(--amber-dim);
+  }
+  .notes-btn svg { flex-shrink: 0; }
+  .row-notes {
+    list-style: none;
+    margin: 6px 0 2px;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text2);
+  }
+  .row-notes li {
+    position: relative;
+    padding-left: 16px;
+    overflow-wrap: anywhere;
+  }
+  .row-notes li + li { margin-top: 4px; }
+  .row-notes li::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: .55em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text3);
+  }
+  .row-notes li.note-warn { color: var(--text); }
+  .row-notes li.note-warn::before { background: var(--amber); }
+  .row-notes li.note-pending { color: var(--text3); font-style: italic; }
+  .row-notes li.note-pending::before { background: none; border: 1px solid var(--text3); }
+
+  .copy-btn.copied { color: var(--green); border-color: rgba(76,175,130,.5); }
+
+  .sort-select {
+    background: var(--surface2);
+    border: 1px solid transparent;
+    border-radius: 14px;
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 5px 10px;
+    margin-left: 4px;
+    cursor: pointer;
+  }
+  .sort-select:hover { color: var(--text); border-color: var(--border2); }
   .badge-recovered { background: var(--green-dim); color: var(--green); }
   .dot-recovered   { background: var(--green); box-shadow: 0 0 6px var(--green); }
 

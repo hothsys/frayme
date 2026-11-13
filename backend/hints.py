@@ -23,9 +23,10 @@ def _source_hints(filepath):
     """Clues to the camera and date of a damaged MP4/MOV, for choosing a donor.
 
     Returns {'camera': [(name, strong)], 'dates': [YYYY-MM-DD, ...],
-    'resolution': 'WxH' or None}.
+    'resolution': 'WxH' or None, 'own_params': bool}; own_params means the
+    file carries its own SPS/PPS (no donor needed).
     """
-    hints = {'camera': [], 'dates': [], 'resolution': None}
+    hints = {'camera': [], 'dates': [], 'resolution': None, 'own_params': False}
     try:
         with open(filepath, 'rb') as f:
             head = f.read(8 << 20)
@@ -71,6 +72,7 @@ def _source_hints(filepath):
         if mdat:
             nal_entries = _scan_mdat_for_nals(filepath, mdat[0], min(mdat[1], 32 << 20), 4)
             inband = _find_inband_params(filepath, mdat[0], nal_entries)
+            hints['own_params'] = bool(inband)
             order = inband and _parse_h264_sps_order(inband[1][0])
             if order:
                 hints['resolution'] = f"{order['width']}x{order['height']}"

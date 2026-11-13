@@ -206,7 +206,10 @@ function showRecoverFailure(job) {
   var msg = 'Recovery failed: ' + (job.error || 'unknown error');
   info.insertAdjacentHTML('beforeend',
     '<div class="issue-reason recover-error" title="' + escHtml(msg) + '">' + escHtml(msg) + '</div>');
-  var clues = donorClues(job.hints);
+  // The row's facts and notes already show these clues for files scanned
+  // since they were added; older saved scans don't have them
+  var ev = findIssue(job.filepath);
+  var clues = ev && ev.details && ev.details.findings ? '' : donorClues(job.hints);
   if (clues) {
     info.insertAdjacentHTML('beforeend',
       '<div class="issue-reason recover-hints" title="' + escHtml(clues) + '">' + escHtml(clues) + '</div>');
@@ -248,14 +251,11 @@ function updateInlineRows(jobs) {
         donor_used: job.result.donor_used,
         output: job.result.output,
         video_only: job.result.video_only,
-        rotation: job.result.rotation
+        rotation: job.result.rotation,
+        facts: job.result.facts,
+        notes: job.result.notes
       };
-      var ev = null;
-      Object.values(folderData).forEach(function(fd) {
-        fd.issues.forEach(function(i) {
-          if (i.filepath === job.filepath) ev = i;
-        });
-      });
+      var ev = findIssue(job.filepath);
       // Replace only this file's row, found by its filename link. Matching
       // any row with a "Queued" button overwrote every other queued file's
       // row with this file when several were queued at once.

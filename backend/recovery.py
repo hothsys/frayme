@@ -1,5 +1,6 @@
 """Recovery engines and the single-file recovery entry point."""
 
+import json
 import os
 import struct
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 from .config import DEFAULT_OUTPUT_DIR
 from .decode import _check_decodes_cleanly, _decode_stats
 from .detect import _walk_avi
+from .findings import describe_recovery
 from .donors import _collect_sps_candidates, _donor_files, _ensure_donor_pool, _find_matching_donor, _get_donor_rotation, _most_common_rate_donor
 from .h264 import _apply_presentation_order, _decoding_signature, _find_inband_params, _parse_h264_pps, _parse_h264_sps_order, _probe_sps_candidates, _scan_mdat_for_nals, _write_annex_b_stream
 from .inference import _infer_h264_params, _trial_map
@@ -99,7 +101,23 @@ def _clean_gops(filepath, nal_entries, sps_list, pps_list, vps_list, codec):
     return kept or None
 
 
-def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
+def _count_pictures(filepath, nal_entries, codec):
+    """Pictures among the scanned NALs (slices that start a picture)."""
+    count = 0
+    with open(filepath, 'rb') as f:
+        for offset, _ in nal_entries:
+            f.seek(offset)
+            head = f.read(3)
+            if len(head) < 3:
+                continue
+            if codec == 'hevc':
+                count += ((head[0] >> 1) & 0x3F) < 32 and bool(head[2] & 0x80)
+            else:
+                count += 1 <= (head[0] & 0x1F) <= 5 and bool(head[1] & 0x80)
+    return count
+
+
+def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None, info=None):
     """Recover a video file missing its moov atom.
 
     Strategy 1: Raw NAL extraction — scan mdat for H.264 or HEVC NALs,
@@ -109,8 +127,12 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
     donor_path may be empty when the file carries its own SPS/PPS.
     data_range: (offset, size) of media data with no mdat box header, for
     files whose header was zeroed; by default the file's mdat box is used.
+    info: optional dict, filled with where rotation and frame rate came from,
+    frames found, and the decode check's counts (see findings.describe_recovery).
     Returns (output_path, method_used) on success, raises ValueError on failure.
     """
+    if info is None:
+        info = {}
     donor_moov = _extract_moov(donor_path) if donor_path else None
     if donor_path and not donor_moov:
         raise ValueError('Donor file has no moov atom')
@@ -261,10 +283,15 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
 
                         # Carry rotation metadata from donor
                         rotation = _get_donor_rotation(fps_donor)
+                        info['fps_source'] = info['rotation_source'] = (
+                            'donor:' + os.path.basename(fps_donor))
                     elif used_inferred:
                         # Inferred SPS carry no timing, and no donor shares
                         # the camera's settings: 30 fps is the likeliest
                         fps = '30'
+                        info['fps_source'], info['rotation_source'] = 'assumed', 'unknown'
+                    else:
+                        info['fps_source'], info['rotation_source'] = 'stream', 'unknown'
 
                     ffmpeg_cmd = [_ffmpeg_path, '-y']
                     if fps:
@@ -297,12 +324,16 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
                             # If the whole fails, keep the groups of pictures
                             # that decode cleanly on their own.
                             try:
-                                ok, msg = _check_decodes_cleanly(out_path)
+                                stats = {}
+                                info['salvaged'] = False
+                                ok, msg = _check_decodes_cleanly(out_path, stats=stats)
                                 if not ok:
                                     kept = _clean_gops(filepath, nal_entries, best_sps,
                                                        best_pps, best_vps, codec)
                                     if kept and build(kept):
-                                        ok, _ = _check_decodes_cleanly(out_path)
+                                        stats = {}
+                                        ok, _ = _check_decodes_cleanly(out_path, stats=stats)
+                                        info['salvaged'] = ok
                                 if not ok:
                                     raw_failure = msg
                                     if os.path.exists(out_path):
@@ -310,6 +341,10 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
                                     continue  # try next codec
                             except subprocess.TimeoutExpired:
                                 pass
+                            info['decode'] = stats
+                            info['inferred'] = used_inferred
+                            info['frames_found'] = _count_pictures(
+                                filepath, nal_entries, codec)
                             if inband and best_sps == inband[1]:
                                 return out_path, 'raw_nal_extraction (embedded SPS/PPS)'
                             if used_inferred:
@@ -333,6 +368,10 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None):
     donor_ftyp = _extract_ftyp(donor_path)
     if not donor_ftyp:
         raise ValueError('Donor file has no ftyp atom')
+    # The donor's whole index is used: its rotation and timing too
+    info.update(fps_source='donor:' + os.path.basename(donor_path),
+                rotation_source='donor:' + os.path.basename(donor_path),
+                inferred=False, salvaged=False)
 
     donor_boxes = parse_boxes(donor_path)
     donor_mdat_offset = 0
@@ -903,15 +942,19 @@ def _trim_damaged_chunks(moov_data, zero_end, filepath=None):
     return bytes(result), total_trimmed
 
 
-def _keep_if_decodes(path):
+def _keep_if_decodes(path, info=None):
     """(ok, message) from the decode check; deletes path if it fails.
 
-    Without ffmpeg nothing can be checked, so the file is kept.
+    Without ffmpeg nothing can be checked, so the file is kept. info, if
+    given, gets the check's counts as info['decode'].
     """
     if not has_ffmpeg():
         return True, 'not checked (no ffmpeg)'
+    stats = {}
     try:
-        ok, msg = _check_decodes_cleanly(path)
+        ok, msg = _check_decodes_cleanly(path, stats=stats)
+        if info is not None:
+            info['decode'] = stats
     except subprocess.TimeoutExpired:
         return True, 'decode check timed out'
     if not ok and os.path.exists(path):
@@ -919,12 +962,15 @@ def _keep_if_decodes(path):
     return ok, msg
 
 
-def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
+def recover_leading_zeros(filepath, donor_path=None, output_dir=None, info=None):
     """Recover a video file with leading zeros.
 
     Skips zero region, looks for surviving MP4 boxes or raw NAL stream.
+    info: optional dict, as for recover_no_moov.
     Returns (output_path, method_used), raises ValueError on failure.
     """
+    if info is None:
+        info = {}
     file_size = os.path.getsize(filepath)
 
     # Find first non-zero byte
@@ -1095,8 +1141,9 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
                         except OSError:
                             pass
 
-            ok, failure = _keep_if_decodes(out_path)
+            ok, failure = _keep_if_decodes(out_path, info)
             if ok:
+                info.update(fps_source='original', rotation_source='original')
                 return out_path, method
             # The moov is there but its frames don't decode (e.g. it belongs
             # to another recording); the strategies below may still work
@@ -1143,8 +1190,9 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
                         out.write(chunk)
                 boxes = [b for b, _, _ in parse_boxes(out_path)]
                 if 'moov' in boxes and 'mdat' in boxes:
-                    ok, failure = _keep_if_decodes(out_path)
+                    ok, failure = _keep_if_decodes(out_path, info)
                     if ok:
+                        info.update(fps_source='original', rotation_source='original')
                         return out_path, 'zero_skip'
                 elif os.path.exists(out_path):
                     # No moov survived: the raw extraction below handles it
@@ -1193,8 +1241,9 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
                 wrap_cmd, capture_output=True, timeout=300,
             )
             if result.returncode == 0 and os.path.getsize(out_path) > 1000:
-                ok, failure = _keep_if_decodes(out_path)
+                ok, failure = _keep_if_decodes(out_path, info)
                 if ok:
+                    info.update(fps_source='stream', rotation_source='unknown')
                     return out_path, 'raw_' + ffmpeg_fmt + '_wrap'
         except Exception:
             pass
@@ -1210,7 +1259,7 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
     # inference), over the data after the zeros
     try:
         return recover_no_moov(filepath, donor_path or '', output_dir,
-                               data_range=(zero_end, surviving))
+                               data_range=(zero_end, surviving), info=info)
     except ValueError as e:
         failure = str(e)
 
@@ -1227,8 +1276,9 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None):
     # Check if stripped file has any valid MP4 structure
     stripped_boxes = parse_boxes(out_path)
     if stripped_boxes and any(bt == 'moov' for bt, _, _ in stripped_boxes):
-        ok, msg = _keep_if_decodes(out_path)
+        ok, msg = _keep_if_decodes(out_path, info)
         if ok:
+            info.update(fps_source='original', rotation_source='original')
             return out_path, 'zero_strip'
         failure = failure or msg
 
@@ -1331,34 +1381,25 @@ def _execute_recovery(filepath, donor_override='', output_dir='', rotation=None)
 
     # A donor is optional: a zeroed file may keep its moov at the end, carry
     # its own SPS/PPS, or have them inferred. The engines explain failures.
+    info = {}
     if is_avi:
         out_path, method = recover_avi(filepath, output_dir)
         donor_auto = ''
+        info.update(fps_source='original', rotation_source='original')
     elif all_zero:
         out_path, method = recover_leading_zeros(
-            filepath, donor_path, output_dir)
+            filepath, donor_path, output_dir, info=info)
     else:
         out_path, method = recover_no_moov(
-            filepath, donor_path, output_dir)
+            filepath, donor_path, output_dir, info=info)
 
     if rotation is not None:
         _apply_rotation(out_path, rotation)
 
     out_size = os.path.getsize(out_path)
 
-    duration = None
-    if has_ffprobe():
-        try:
-            dur_cmd = subprocess.run(
-                [_ffprobe_path, '-v', 'error',
-                 '-show_entries', 'format=duration',
-                 '-of', 'csv=p=0', out_path],
-                capture_output=True, timeout=10)
-            dur_str = dur_cmd.stdout.decode().strip()
-            if dur_str:
-                duration = float(dur_str)
-        except Exception:
-            pass
+    probed = _probe_output(out_path)
+    duration = probed.get('duration')
 
     original_size = 0
     for r in scan_state.get('results', []):
@@ -1372,19 +1413,6 @@ def _execute_recovery(filepath, donor_override='', output_dir='', rotation=None)
     if original_size > 0:
         recovery_pct = round(out_size / original_size * 100, 1)
 
-    has_audio = False
-    if has_ffprobe():
-        try:
-            ac = subprocess.run(
-                [_ffprobe_path, '-v', 'error',
-                 '-select_streams', 'a',
-                 '-show_entries', 'stream=codec_type',
-                 '-of', 'csv=p=0', out_path],
-                capture_output=True, timeout=10)
-            has_audio = bool(ac.stdout.decode().strip())
-        except Exception:
-            pass
-
     resp = {
         'ok': True,
         'output': out_path,
@@ -1394,13 +1422,59 @@ def _execute_recovery(filepath, donor_override='', output_dir='', rotation=None)
         'duration': duration,
         'recovery_pct': recovery_pct,
         'original_size': original_size,
-        'video_only': not has_audio,
+        'video_only': not probed.get('has_audio'),
         'rotation': _read_rotation(out_path),
+        'codec': probed.get('codec'),
+        'resolution': probed.get('resolution'),
+        'fps': probed.get('fps'),
+        'frames': probed.get('frames'),
     }
     # A file decoded with its own or inferred SPS/PPS didn't use the donor
     if donor_auto and 'embedded' not in method and 'inferred' not in method:
         resp['donor_used'] = donor_auto
+    try:
+        resp.update(describe_recovery(info, resp, rotation))
+    except Exception:
+        pass    # the row just shows less
     return resp
+
+
+def _probe_output(path):
+    """Duration, sound, codec, size, frame rate and frame count of a
+    recovered file, from one ffprobe call (container fields, no decoding)."""
+    out = {}
+    if not has_ffprobe():
+        return out
+    try:
+        r = subprocess.run(
+            [_ffprobe_path, '-v', 'error', '-show_entries',
+             'format=duration:stream=codec_type,codec_name,width,height,'
+             'avg_frame_rate,nb_frames', '-of', 'json', path],
+            capture_output=True, timeout=30)
+        data = json.loads(r.stdout or b'{}')
+    except Exception:
+        return out
+    try:
+        out['duration'] = float(data.get('format', {}).get('duration'))
+    except (TypeError, ValueError):
+        pass
+    streams = data.get('streams', [])
+    out['has_audio'] = any(st.get('codec_type') == 'audio' for st in streams)
+    video = next((st for st in streams if st.get('codec_type') == 'video'), None)
+    if video:
+        out['codec'] = {'h264': 'H.264', 'hevc': 'HEVC', 'mjpeg': 'Motion JPEG'}.get(
+            video.get('codec_name'), (video.get('codec_name') or '').upper() or None)
+        if video.get('width') and video.get('height'):
+            out['resolution'] = f"{video['width']}x{video['height']}"
+        try:
+            num, den = (int(x) for x in video.get('avg_frame_rate', '0/0').split('/'))
+            if num and den:
+                out['fps'] = round(num / den, 3)
+        except ValueError:
+            pass
+        if str(video.get('nb_frames', '')).isdigit():
+            out['frames'] = int(video['nb_frames'])
+    return out
 
 
 def _check_output_dir(path):

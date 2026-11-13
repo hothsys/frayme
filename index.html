@@ -168,6 +168,11 @@
         <button class="filter-pill" onclick="setFilter(this,'truncated')">Truncated</button>
         <button class="filter-pill" onclick="setFilter(this,'empty')">Empty</button>
         <button class="filter-pill" onclick="setFilter(this,'error')">Error</button>
+        <select id="sort-select" class="sort-select" onchange="setSort(this.value)" title="Sort the files in each folder" aria-label="Sort files">
+          <option value="name">Sort: Name</option>
+          <option value="size">Sort: Largest first</option>
+          <option value="status">Sort: Status</option>
+        </select>
       </div>
     </div>
     <div id="folder-list"></div>
