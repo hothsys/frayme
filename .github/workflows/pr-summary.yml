@@ -15,13 +15,8 @@ on:
         required: true
 jobs:
   summary:
-    uses: hothsys/.github/.github/workflows/reusable-pr-summary.yml@main
+    uses: hothsys/.github/.github/workflows/reusable-pr-summary.yml@v1
     # The shared workflow can't have more permissions than its caller grants.
     permissions:
       pull-requests: write
-    secrets:
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-    # Optional: pin a model for this repo instead of the auto router, using
-    # an OpenRouter model ID such as <provider>/<model>.
-    # with:
-    #   model: <provider>/<model>
+    secrets: inherit
