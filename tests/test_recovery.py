@@ -7,7 +7,6 @@ whose first keyframe is lost restarts at the next one, 30 frames later.
 """
 
 import os
-import shutil
 import unittest
 
 from tests.fixtures import (CLIPS, HAS_X265, FrayTestCase, cut_tail, decode_errors,

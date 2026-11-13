@@ -38,8 +38,10 @@ def _decode_stats(input_args, timeout, count_errors=True):
     return problems, frames
 
 
-def _check_decodes_cleanly(path, timeout=600):
+def _check_decodes_cleanly(path, timeout=600, stats=None):
     """Decode-test a recovered file. Returns (ok, message).
+
+    stats: optional dict, filled with packets, frames and problems.
 
     At least 80% of the video packets must decode, with problems in under
     10% of them. A size-based error allowance used to pass files where a
@@ -53,6 +55,8 @@ def _check_decodes_cleanly(path, timeout=600):
     digits = ''.join(ch for ch in pk.stdout.decode() if ch.isdigit())
     packets = int(digits) if digits else 0
     problems, frames = _decode_stats(['-i', path], timeout)
+    if stats is not None:
+        stats.update(packets=packets, frames=frames, problems=problems)
     if packets == 0:
         return False, 'no video frames'
     if frames < packets * 0.8:

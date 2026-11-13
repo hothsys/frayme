@@ -231,7 +231,33 @@ function cancelScan() {
   }, 5000);
 }
 
-// ── Filtering ──
+// ── Filtering and sorting ──
+
+// Files in each folder are sorted by name, size (largest first) or status;
+// the choice is remembered
+var currentSort = 'name';
+try { currentSort = localStorage.getItem('resultSort') || 'name'; } catch (e) {}
+var STATUS_ORDER = { no_moov: 0, corrupt: 1, truncated: 2, error: 3, empty: 4 };
+
+function setSort(value) {
+  currentSort = value;
+  try { localStorage.setItem('resultSort', value); } catch (e) {}
+  applyFilter();
+}
+
+function sortIssues(list) {
+  var byName = function(a, b) {
+    return a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' });
+  };
+  return list.slice().sort(function(a, b) {
+    if (currentSort === 'size') return (b.file_size || 0) - (a.file_size || 0) || byName(a, b);
+    if (currentSort === 'status') {
+      var sa = STATUS_ORDER[a.status], sb = STATUS_ORDER[b.status];
+      return (sa === undefined ? 9 : sa) - (sb === undefined ? 9 : sb) || byName(a, b);
+    }
+    return byName(a, b);
+  });
+}
 
 function setFilter(btn, filter) {
   currentFilter = filter;
@@ -255,7 +281,7 @@ function applyFilter() {
     var body = group.querySelector('.folder-body');
     body.innerHTML = '';
 
-    var visible = folderData[dir].issues.filter(i => matchesFilter(i.status));
+    var visible = sortIssues(folderData[dir].issues.filter(i => matchesFilter(i.status)));
     visible.forEach(function(ev) {
       body.insertAdjacentHTML('beforeend', buildIssueRowHtml(ev));
     });
@@ -277,3 +303,6 @@ function applyFilter() {
 function exportData(fmt) {
   window.location.href = '/api/export?format=' + fmt;
 }
+
+// Scripts load at the end of the page, so the picker exists already
+document.getElementById('sort-select').value = currentSort;

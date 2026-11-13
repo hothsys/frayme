@@ -8,10 +8,23 @@ from concurrent.futures import as_completed
 from .config import OTHER_VIDEO_EXTS, VIDEO_EXTS, WORKER_THREADS
 from .detect import ScanCancelled, check_video
 from .donors import _usable_donor
+from .findings import describe_damaged
 from .state import donor_pool, scan_state
 
 
 # ─── Directory scanner ───────────────────────────────────────────────────────
+
+def _check_and_describe(fpath, should_stop):
+    """check_video, plus what the rows show about a damaged file. Runs on
+    the scan's worker threads, since describing takes about half a second."""
+    status, reason, details = check_video(fpath, should_stop)
+    if status not in ('ok', 'not_video'):
+        try:
+            details['findings'] = describe_damaged(fpath, status, details)
+        except Exception:
+            pass    # the row just shows less
+    return status, reason, details
+
 
 def scan_directory_gen(root_dir, scan_id=None):
     """Generator that scans a directory for video files and yields SSE events.
@@ -79,7 +92,7 @@ def scan_directory_gen(root_dir, scan_id=None):
         executor = ThreadPoolExecutor(max_workers=WORKER_THREADS)
         try:
             for fpath in batch:
-                fut = executor.submit(check_video, fpath, cancelled)
+                fut = executor.submit(_check_and_describe, fpath, cancelled)
                 futures[fut] = fpath
 
             for fut in as_completed(futures):

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from .config import DEFAULT_OUTPUT_DIR, VIDEO_EXTS
 from .detect import check_video
 from .donors import _ensure_donor_pool, _usable_donor
+from .findings import describe_contents_cached
 from .jobs import cancel_job, clear_finished, enqueue_job, list_jobs, rotate_output
 from .recovery import _check_output_dir, _execute_recovery
 from .scan import scan_directory_gen
@@ -104,6 +105,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 self._handle_load_scan()
             elif path == '/api/add-donor-folder':
                 self._handle_add_donor_folder()
+            elif path == '/api/file-details':
+                self._handle_file_details()
             else:
                 self.send_error(404)
         except (ConnectionResetError, BrokenPipeError):
@@ -155,9 +158,10 @@ class FrameHandler(SimpleHTTPRequestHandler):
         writer = csv.writer(output)
         writer.writerow([
             'Status', 'Filename', 'Extension', 'Directory', 'Full Path',
-            'File Size (bytes)', 'Issue',
+            'File Size (bytes)', 'Issue', 'Found', 'Notes',
         ])
         for r in results:
+            findings = (r.get('details') or {}).get('findings') or {}
             writer.writerow([
                 r.get('status', ''),
                 r.get('filename', ''),
@@ -166,6 +170,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 r.get('filepath', ''),
                 r.get('file_size', ''),
                 r.get('reason', ''),
+                ' · '.join(findings.get('facts', [])),
+                ' | '.join(n.get('text', '') for n in findings.get('notes', [])),
             ])
 
         body = output.getvalue().encode()
@@ -279,6 +285,21 @@ class FrameHandler(SimpleHTTPRequestHandler):
             return self._send_json({'error': 'No results provided'}, 400)
         scan_state['results'] = results
         self._send_json({'ok': True, 'count': len(results)})
+
+    def _handle_file_details(self):
+        # The slow part of a damaged file's description (a scan of all its
+        # media data), run when the user opens the row's details
+        filepath = self._read_json_body().get('filepath', '')
+        if (not filepath or not os.path.isfile(filepath)
+                or os.path.splitext(filepath)[1].lower() not in VIDEO_EXTS - {'.avi'}):
+            return self._send_json({'error': 'File not found'}, 404)
+        details = next((r.get('details') for r in scan_state.get('results', [])
+                        if r.get('filepath') == filepath), None)
+        try:
+            notes = describe_contents_cached(filepath, details)
+        except Exception as e:
+            return self._send_json({'error': f'Could not read the file: {e}'}, 500)
+        self._send_json({'ok': True, 'notes': notes})
 
     def _handle_add_donor_folder(self):
         # The user points at a folder of healthy videos from the same camera;

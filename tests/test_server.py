@@ -138,10 +138,21 @@ class Endpoints(ServerTestCase):
         # The size comparison uses the scan's record of the damaged file
         self.assertIsNotNone(job['result']['recovery_pct'])
 
+        self.assertIn('copied from the donor', ' '.join(n['text'] for n in job['result']['notes']))
+
         _, _, body = self.get('/api/recover-status')
         self.assertIn(data['job_id'], [j['id'] for j in json.loads(body)['jobs']])
         _, headers, body = self.get('/api/export')
-        self.assertIn('clip.mp4', body.decode())
+        csv_text = body.decode()
+        self.assertIn('clip.mp4', csv_text)
+        self.assertIn('Found,Notes', csv_text.splitlines()[0])
+        self.assertIn('No orientation', csv_text)
+
+        # The full look at a file, run when its notes are opened
+        code, data = self.post('/api/file-details', {'filepath': damaged})
+        self.assertEqual(code, 200, data)
+        self.assertIn('Video fills', data['notes'][0]['text'])
+        self.assertEqual(self.post('/api/file-details', {'filepath': '/nope.mp4'})[0], 404)
 
 
 if __name__ == '__main__':

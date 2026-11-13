@@ -8,13 +8,16 @@ checked in. Usage:
 
     python3 tests/regression.py INPUT_DIR [--donors DONOR_DIR]
                                 [--save results.json] [--compare results.json]
+                                [--keep OUTPUT_DIR]
 
 INPUT_DIR is scanned the way the app scans it. Every file the app would
 offer to recover is recovered into a temporary folder (deleted afterwards)
 and the result is decode-tested. DONOR_DIR, if given, is added as a donor
 folder, like the Choose Donor button. --save writes the outcomes to a JSON
 file; --compare reports every file whose outcome changed since a saved run,
-and exits with status 1 if any recovery got worse.
+and exits with status 1 if any recovery got worse. --keep saves the
+recovered videos in OUTPUT_DIR (created if needed) for watching, instead of
+deleting them; a file with the same name there is replaced.
 """
 
 import argparse
@@ -68,7 +71,7 @@ def add_donor_folder(donor_dir, target_dir):
     return len(found)
 
 
-def run(input_dir, donor_dir=None):
+def run(input_dir, donor_dir=None, keep_dir=None):
     issues = []
     state.scan_state['results'] = []
     for event in scan_directory_gen(input_dir):
@@ -85,6 +88,8 @@ def run(input_dir, donor_dir=None):
         print(f'Using {found} healthy donors from {donor_dir}')
 
     out_dir = tempfile.mkdtemp(prefix='frayme-regression-')
+    if keep_dir:
+        os.makedirs(keep_dir, exist_ok=True)
     results = {}
     try:
         for ev in sorted(issues, key=lambda e: e['filepath']):
@@ -102,7 +107,10 @@ def run(input_dir, donor_dir=None):
                 entry.update(outcome='recovered' if ok else 'bad output',
                              method=r['method'], frames=count_frames(r['output']),
                              check=msg)
-                os.unlink(r['output'])
+                if keep_dir:
+                    shutil.move(r['output'], os.path.join(keep_dir, r['filename']))
+                else:
+                    os.unlink(r['output'])
             except Exception as e:
                 entry.update(outcome='failed', error=str(e)[:200])
             entry['seconds'] = round(time.time() - t, 1)
@@ -146,6 +154,8 @@ def main():
     ap.add_argument('--donors', help='folder of healthy videos to use as donors')
     ap.add_argument('--save', help='write outcomes to this JSON file')
     ap.add_argument('--compare', help='compare with outcomes saved earlier')
+    ap.add_argument('--keep', metavar='OUTPUT_DIR',
+                    help='save the recovered videos here instead of deleting them')
     args = ap.parse_args()
 
     input_dir = os.path.abspath(os.path.expanduser(args.input_dir))
@@ -154,7 +164,8 @@ def main():
         return 0
     donors = os.path.abspath(os.path.expanduser(args.donors)) if args.donors else None
 
-    results = run(input_dir, donors)
+    keep = os.path.abspath(os.path.expanduser(args.keep)) if args.keep else None
+    results = run(input_dir, donors, keep)
     counts = {}
     for entry in results.values():
         counts[entry['outcome']] = counts.get(entry['outcome'], 0) + 1

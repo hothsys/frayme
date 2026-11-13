@@ -5,7 +5,7 @@ import subprocess
 import unittest
 
 from tests.fixtures import (CLIPS, FFMPEG, FrayTestCase, drop_moov, needs_ffmpeg,
-                            needs_x264, packet_times, top_boxes)
+                            needs_x264, top_boxes)
 from backend.decode import _check_decodes_cleanly, _decode_stats
 from backend.h264 import _scan_mdat_for_nals
 
