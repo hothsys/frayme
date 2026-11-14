@@ -1,8 +1,10 @@
 """The scan generator and the recovery queue, as the web app drives them."""
 
 import os
+import threading
 import time
 import unittest
+from unittest import mock
 
 from tests.fixtures import (CLIPS, FrayTestCase, drop_moov, needs_ffmpeg, needs_x264,
                             zero_head)
@@ -73,6 +75,46 @@ class Scan(FrayTestCase):
         self.assertEqual(event['type'], 'cancelled')
 
 
+class HeldRecoveries:
+    """Stands in for the recovery engine: each job waits until the block
+    ends, so tests can see which jobs run at once."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.release = threading.Event()
+        self.started, self.running, self.most = [], 0, 0
+
+    def fake(self, filepath, *args):
+        with self.lock:
+            self.started.append(filepath)
+            self.running += 1
+            self.most = max(self.most, self.running)
+        self.release.wait(30)
+        with self.lock:
+            self.running -= 1
+        return {'ok': True, 'output': filepath}
+
+    def wait_running(self, n, timeout=10):
+        deadline = time.time() + timeout
+        while self.running < n:
+            if time.time() > deadline:
+                raise AssertionError(f'{self.running} jobs running, expected {n}')
+            time.sleep(0.02)
+
+    def __enter__(self):
+        self.patch = mock.patch.object(jobs, '_execute_recovery', self.fake)
+        self.patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.release.set()
+        # Keep the stand-in until the held jobs have finished with it
+        for job in jobs.list_jobs():
+            if job['status'] in ('queued', 'recovering'):
+                wait_for(job['id'])
+        self.patch.stop()
+
+
 @needs_ffmpeg
 @needs_x264
 class Queue(FrayTestCase):
@@ -107,18 +149,86 @@ class Queue(FrayTestCase):
         self.assertEqual(os.listdir(self.out_dir), [], 'a failed job left a file')
 
     def test_duplicate_and_cancel(self):
-        # Hold the worker on a slow first job so the second stays queued
-        slow = drop_moov(CLIPS.get('bf', bframes=2), self.damaged('slow.mp4'))
-        path = drop_moov(CLIPS.get('base'), self.damaged('clip.mp4'))
-        first = jobs.enqueue_job(slow, output_dir=self.out_dir)[1]['job_id']
-        second = jobs.enqueue_job(path, output_dir=self.out_dir)[1]['job_id']
-        self.assertEqual(jobs.enqueue_job(path, output_dir=self.out_dir)[1]['error'],
-                         'Already queued')
-        self.assertEqual(jobs.cancel_job(second)[0], 200)
-        self.assertNotIn(second, [j['id'] for j in jobs.list_jobs()])
-        wait_for(first)
-        self.assertEqual(jobs.cancel_job(first)[0], 409, 'finished jobs cannot be cancelled')
-        self.assertFalse(os.path.exists(os.path.join(self.out_dir, 'clip_recovered.mp4')))
+        with HeldRecoveries() as held:
+            ids = [jobs.enqueue_job(self.damaged(f'clip{i}.mp4', touch=True),
+                                    output_dir=self.out_dir)[1]['job_id'] for i in range(3)]
+            held.wait_running(2)
+            third = self.damaged('clip2.mp4')
+            self.assertEqual(jobs.enqueue_job(third, output_dir=self.out_dir)[1]['error'],
+                             'Already queued')
+            self.assertEqual(jobs.cancel_job(ids[0])[0], 409, 'running jobs cannot be cancelled')
+            self.assertEqual(jobs.cancel_job(ids[2])[0], 200)
+            self.assertNotIn(ids[2], [j['id'] for j in jobs.list_jobs()])
+        for job_id in ids[:2]:
+            self.assertEqual(wait_for(job_id)['status'], 'done')
+        self.assertNotIn(third, held.started, 'a cancelled job ran')
+        self.assertEqual(jobs.cancel_job(ids[0])[0], 409, 'finished jobs cannot be cancelled')
+
+    def test_two_recoveries_run_at_once(self):
+        with HeldRecoveries() as held:
+            ids = [jobs.enqueue_job(self.damaged(f'clip{i}.mp4', touch=True),
+                                    output_dir=self.out_dir)[1]['job_id'] for i in range(4)]
+            held.wait_running(2)
+            time.sleep(0.3)
+            self.assertEqual(held.running, 2, 'the pool holds two workers')
+            self.assertEqual([j['status'] for j in jobs.list_jobs()],
+                             ['recovering', 'recovering', 'queued', 'queued'])
+        for job_id in ids:
+            self.assertEqual(wait_for(job_id)['status'], 'done')
+        self.assertEqual(held.most, 2)
+
+    def test_same_names_never_run_together(self):
+        # Outputs and temporary files are named after the source, so two
+        # GOPR0001.MP4 files into one folder must take turns
+        a, b = (os.path.join(self.src_dir, d) for d in ('card1', 'card2'))
+        for d in (a, b):
+            os.makedirs(d)
+            open(os.path.join(d, 'GOPR0001.MP4'), 'wb').close()
+        open(os.path.join(a, 'gopr0001.mov'), 'wb').close()
+        other = self.damaged('other.mp4', touch=True)
+        with HeldRecoveries() as held:
+            ids = [jobs.enqueue_job(p, output_dir=self.out_dir)[1]['job_id']
+                   for p in (os.path.join(a, 'GOPR0001.MP4'), os.path.join(b, 'GOPR0001.MP4'),
+                             os.path.join(a, 'gopr0001.mov'), other)]
+            held.wait_running(2)
+            self.assertEqual(sorted(os.path.basename(p) for p in held.started),
+                             ['GOPR0001.MP4', 'other.mp4'], 'the same name ran twice at once')
+        for job_id in ids:
+            self.assertEqual(wait_for(job_id)['status'], 'done')
+        self.assertEqual(held.most, 2)
+
+    def test_donor_folder_checked_once(self):
+        # Two recoveries from a folder no scan has seen (a saved scan) both
+        # want its donors; one checks the files, the other waits for it
+        from backend import donors
+        for i in range(3):
+            self.place(CLIPS.get('base'), f'healthy{i}.mp4')
+        real, calls = donors.check_video, []
+
+        def counted(path, *args, **kwargs):
+            calls.append(path)
+            time.sleep(0.1)
+            return real(path, *args, **kwargs)
+        with mock.patch.object(donors, 'check_video', counted):
+            threads = [threading.Thread(target=donors._ensure_donor_pool, args=(self.src_dir,))
+                       for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(donors._donor_files(self.src_dir)), 3)
+
+    def test_parallel_recoveries_both_play(self):
+        # Real recoveries side by side, sharing the donor pool
+        self.place(CLIPS.get('donor', pattern='b'), 'donor.mp4')
+        paths = [drop_moov(CLIPS.get('base'), self.damaged('one.mp4')),
+                 drop_moov(CLIPS.get('bf', bframes=2), self.damaged('two.mp4'))]
+        ids = [jobs.enqueue_job(p, output_dir=self.out_dir)[1]['job_id'] for p in paths]
+        for job_id in ids:
+            job = wait_for(job_id)
+            self.assertEqual(job['status'], 'done', job.get('error'))
+            self.assertPlaysCleanly(job['result']['output'])
 
     def test_rotate_output_only_for_this_sessions_outputs(self):
         path = drop_moov(CLIPS.get('base'), self.damaged('clip.mp4'))

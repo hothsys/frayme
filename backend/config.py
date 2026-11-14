@@ -27,6 +27,11 @@ VALID_BOX_TYPES = {
 WORKER_THREADS = 4
 
 
+# Recoveries that run at once. Each starts several ffmpeg processes, and
+# trial decoding uses half the cores, so more would only compete for CPU.
+RECOVERY_WORKERS = 2
+
+
 # Rotations the user can pick, in degrees clockwise. ffmpeg's display
 # rotation counts counter-clockwise: an iPhone portrait clip reads -90.
 _ROTATIONS = (0, 90, 180, 270)

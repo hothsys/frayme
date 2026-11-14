@@ -1,50 +1,71 @@
 """The recovery queue: jobs, the worker thread, and queue operations."""
 
 import os
-import queue as queue_mod
 import threading
 import time
 
-from .config import VIDEO_EXTS, _ROTATIONS
+from .config import RECOVERY_WORKERS, VIDEO_EXTS, _ROTATIONS
 from .hints import _source_hints
 from .recovery import _apply_rotation, _check_output_dir, _execute_recovery, _read_rotation
 
 
-_recover_queue = queue_mod.Queue()
-
-
+# Every job this session, by id. Queued jobs wait here in id order; there is
+# no separate queue, so cancelling a job is just removing it.
 _recover_jobs = {}
 
 
 _recover_lock = threading.Lock()
 
 
+# Signalled when a job is queued or finishes
+_recover_wakeup = threading.Condition(_recover_lock)
+
+
 _recover_counter = 0
 
 
-_recover_worker_started = False
+_recover_workers = []
+
+
+# Output names in use by running jobs: (output folder, stem), lowercased
+# since macOS folders ignore case. Engines name their outputs and temporary
+# files <stem>_recovered.*, so two jobs on files with the same name (say
+# GOPR0001.MP4 from two cards) must not run at once into the same folder.
+_running_outputs = set()
+
+
+def _output_key(job):
+    stem = os.path.splitext(os.path.basename(job['filepath']))[0]
+    return (job['output_dir'].lower(), stem.lower())
+
+
+def _next_job():
+    """The oldest queued job whose output names are free, marked as running.
+    Blocks until there is one. Call without the lock held."""
+    with _recover_wakeup:
+        while True:
+            for job_id in sorted((j for j, job in _recover_jobs.items()
+                                  if job['status'] == 'queued'), key=int):
+                job = _recover_jobs[job_id]
+                key = _output_key(job)
+                if key not in _running_outputs:
+                    _running_outputs.add(key)
+                    job['status'] = 'recovering'
+                    job['started_at'] = time.time()
+                    return job
+            _recover_wakeup.wait()
 
 
 def _recovery_worker():
-    """Daemon thread processing recovery jobs sequentially."""
+    """Daemon thread: runs queued jobs, one at a time per worker."""
     while True:
-        job = _recover_queue.get()
-        job_id = job['id']
-        with _recover_lock:
-            # Skip jobs cancelled while waiting (they were removed from the list)
-            if job_id not in _recover_jobs:
-                _recover_queue.task_done()
-                continue
-            _recover_jobs[job_id]['status'] = 'recovering'
-            _recover_jobs[job_id]['started_at'] = time.time()
+        job = _next_job()
+        update = {}
         try:
             result = _execute_recovery(
                 job['filepath'], job.get('donor', ''), job.get('output_dir', ''),
                 job.get('rotation'))
-            with _recover_lock:
-                _recover_jobs[job_id]['status'] = 'done'
-                _recover_jobs[job_id]['result'] = result
-                _recover_jobs[job_id]['finished_at'] = time.time()
+            update = {'status': 'done', 'result': result}
         except Exception as e:
             hints = None
             if os.path.splitext(job['filepath'])[1].lower() in VIDEO_EXTS - {'.avi'}:
@@ -52,21 +73,24 @@ def _recovery_worker():
                     hints = _source_hints(job['filepath'])
                 except Exception:
                     pass
-            with _recover_lock:
-                _recover_jobs[job_id]['status'] = 'failed'
-                _recover_jobs[job_id]['error'] = str(e)
-                _recover_jobs[job_id]['hints'] = hints
-                _recover_jobs[job_id]['finished_at'] = time.time()
+            update = {'status': 'failed', 'error': str(e), 'hints': hints}
         finally:
-            _recover_queue.task_done()
+            with _recover_wakeup:
+                job.update(update or {'status': 'failed', 'error': 'Recovery stopped'})
+                job['finished_at'] = time.time()
+                _running_outputs.discard(_output_key(job))
+                _recover_wakeup.notify_all()
 
 
-def _ensure_recovery_worker():
-    global _recover_worker_started
-    if not _recover_worker_started:
-        _recover_worker_started = True
-        t = threading.Thread(target=_recovery_worker, daemon=True)
-        t.start()
+def _ensure_recovery_workers():
+    """Start the worker pool on first use. Each recovery runs several ffmpeg
+    processes (trial decodes use half the cores), so the pool stays small."""
+    with _recover_lock:
+        while len(_recover_workers) < RECOVERY_WORKERS:
+            t = threading.Thread(target=_recovery_worker, daemon=True,
+                                 name=f'recovery-{len(_recover_workers) + 1}')
+            _recover_workers.append(t)
+            t.start()
 
 
 def enqueue_job(filepath, donor='', output_dir='', rotation=None):
@@ -101,9 +125,9 @@ def enqueue_job(filepath, donor='', output_dir='', rotation=None):
             'error': None,
         }
         _recover_jobs[job_id] = job
+        _recover_wakeup.notify_all()
 
-    _recover_queue.put(job)
-    _ensure_recovery_worker()
+    _ensure_recovery_workers()
     return 200, {'ok': True, 'job_id': job_id, 'status': 'queued'}
 
 
@@ -139,7 +163,7 @@ def rotate_output(output, rotation):
 def cancel_job(job_id):
     """Remove a job that is still waiting. Returns (status_code, payload).
 
-    Only queued jobs can be cancelled; the worker skips them.
+    Only queued jobs can be cancelled; running ones can't be stopped midway.
     """
     with _recover_lock:
         job = _recover_jobs.get(job_id)
