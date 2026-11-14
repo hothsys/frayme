@@ -209,8 +209,8 @@ def describe_contents(filepath, details):
     text = (f'Video fills {_size(covered)} of the {_size(size)} of media data '
             f'({pct:.0f}%), in {where}.')
     if pct < 60:
-        text += (' The rest is other data, typical of files rebuilt by recovery tools '
-                 'such as PhotoRec; only the video stretches can be recovered.')
+        text += (' The rest is other data, as in files pieced back together from a wiped '
+                 'or formatted card; only the video stretches can be recovered.')
         _note(notes, 'warn', text)
     else:
         _note(notes, 'info', text)

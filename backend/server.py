@@ -18,7 +18,7 @@ from .findings import describe_contents_cached
 from .jobs import cancel_job, clear_finished, enqueue_job, list_jobs, rotate_output
 from .recovery import _check_output_dir, _execute_recovery
 from .scan import scan_directory_gen
-from .state import APP_DIR, donor_map, donor_pool, scan_state
+from .state import APP_DIR, donor_lock, donor_map, donor_pool, scan_state
 from .tools import _ffmpeg_path, _ffprobe_path, has_ffmpeg, has_ffprobe
 
 
@@ -126,7 +126,8 @@ class FrameHandler(SimpleHTTPRequestHandler):
         scan_state['cancelled'] = False
         scan_state['running'] = True
         scan_state['results'] = []
-        donor_pool.clear()
+        with donor_lock:
+            donor_pool.clear()
 
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
@@ -331,9 +332,10 @@ class FrameHandler(SimpleHTTPRequestHandler):
                 break
         fdir = os.path.dirname(filepath)
         _ensure_donor_pool(fdir)
-        pool = donor_pool.setdefault(fdir, [])
-        added = [f for f in found if f not in pool]
-        pool[:0] = added
+        with donor_lock:
+            pool = donor_pool.setdefault(fdir, [])
+            added = [f for f in found if f not in pool]
+            pool[:0] = added
         self._send_json({'ok': True, 'added': len(added),
                          'found': len(found), 'checked': checked})
 

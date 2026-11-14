@@ -9,7 +9,7 @@ from .config import OTHER_VIDEO_EXTS, VIDEO_EXTS, WORKER_THREADS
 from .detect import ScanCancelled, check_video
 from .donors import _usable_donor
 from .findings import describe_damaged
-from .state import donor_pool, scan_state
+from .state import donor_lock, donor_pool, scan_state
 
 
 # ─── Directory scanner ───────────────────────────────────────────────────────
@@ -115,7 +115,8 @@ def scan_directory_gen(root_dir, scan_id=None):
                 fsize = details.get('file_size', 0)
                 # Mark the folder as scanned even if it has no healthy files,
                 # so _ensure_donor_pool doesn't recheck it during recovery
-                donor_pool.setdefault(fdir, [])
+                with donor_lock:
+                    donor_pool.setdefault(fdir, [])
 
                 elapsed = time.time() - start_time
                 rate = scanned / elapsed if elapsed > 0 else 0
@@ -157,7 +158,8 @@ def scan_directory_gen(root_dir, scan_id=None):
                     }
                     yield event
                 elif _usable_donor(status, details):
-                    donor_pool.setdefault(fdir, []).append(fpath)
+                    with donor_lock:
+                        donor_pool.setdefault(fdir, []).append(fpath)
         finally:
             # In-flight checks stop on their own via the cancelled() hook
             for fut in futures:

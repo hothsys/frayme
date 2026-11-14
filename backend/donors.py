@@ -4,11 +4,12 @@ import collections
 import os
 import re
 import subprocess
+import threading
 
 from .config import VIDEO_EXTS
 from .detect import check_video
 from .mp4 import _extract_avcc_params, _extract_hvcc_params, _extract_moov
-from .state import donor_pool
+from .state import donor_lock, donor_pool
 from .tools import _ffprobe_path, has_ffprobe
 
 
@@ -137,37 +138,55 @@ def _donor_files(fdir):
     salvaged files often sit in a folder with no healthy video at all, while
     the same camera's healthy videos are elsewhere on the scanned drive.
     """
-    own = donor_pool.get(fdir)
-    if own:
-        return own
-    seen, files = set(), []
-    for pool in list(donor_pool.values()):
-        for f in pool:
-            if f not in seen:
-                seen.add(f)
-                files.append(f)
-    return files
+    with donor_lock:
+        own = donor_pool.get(fdir)
+        if own:
+            return list(own)
+        seen, files = set(), []
+        for pool in donor_pool.values():
+            for f in pool:
+                if f not in seen:
+                    seen.add(f)
+                    files.append(f)
+        return files
+
+
+# Folders whose donors a recovery is collecting right now: {fdir: Event}
+_collecting = {}
 
 
 def _ensure_donor_pool(fdir):
     """Collect healthy donors for a folder this session hasn't scanned, e.g.
     when recovering from a previous scan loaded in the browser."""
-    if fdir in donor_pool:
+    with donor_lock:
+        if fdir in donor_pool:
+            return
+        busy = _collecting.get(fdir)
+        if busy is None:
+            _collecting[fdir] = threading.Event()
+    if busy is not None:
+        # Another recovery is checking this folder; use its result
+        busy.wait()
         return
     healthy = []
     try:
-        names = sorted(os.listdir(fdir))
-    except OSError:
-        names = []
-    for name in names:
-        fpath = os.path.join(fdir, name)
-        if (os.path.splitext(name)[1].lower() not in VIDEO_EXTS
-                or not os.path.isfile(fpath)):
-            continue
         try:
-            status, _, details = check_video(fpath)
-            if _usable_donor(status, details):
-                healthy.append(fpath)
-        except Exception:
-            pass
-    donor_pool[fdir] = healthy
+            names = sorted(os.listdir(fdir))
+        except OSError:
+            names = []
+        for name in names:
+            fpath = os.path.join(fdir, name)
+            if (os.path.splitext(name)[1].lower() not in VIDEO_EXTS
+                    or not os.path.isfile(fpath)):
+                continue
+            try:
+                status, _, details = check_video(fpath)
+                if _usable_donor(status, details):
+                    healthy.append(fpath)
+            except Exception:
+                pass
+    finally:
+        with donor_lock:
+            # A scan may have filled it meanwhile; its list wins
+            donor_pool.setdefault(fdir, healthy)
+            _collecting.pop(fdir).set()

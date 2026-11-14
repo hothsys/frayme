@@ -294,9 +294,13 @@ class FrayTestCase(unittest.TestCase):
         shutil.copyfile(cached_path, dst)
         return dst
 
-    def damaged(self, name):
-        """A path in the source folder for a damaged copy."""
-        return os.path.join(self.src_dir, name)
+    def damaged(self, name, touch=False):
+        """A path in the source folder for a damaged copy; touch creates an
+        empty file there (enough for queue tests that never decode it)."""
+        path = os.path.join(self.src_dir, name)
+        if touch:
+            open(path, 'wb').close()
+        return path
 
     def assertPlaysCleanly(self, path, min_frames=1):
         """The recovered file decodes with no errors and has real frames.

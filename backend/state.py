@@ -1,6 +1,7 @@
 """Shared state: scan results, donor folders, and the donor pool."""
 
 import os
+import threading
 
 
 # The project folder (this file lives in backend/), where the web app's files are
@@ -23,3 +24,8 @@ donor_map = {}
 
 # Auto-collected healthy files: { dir_path: [filepath, ...] }
 donor_pool = {}
+
+
+# Guards donor_pool: scans clear and fill it while recoveries, which run on
+# several workers, read it. Hold it only briefly (no file checks inside).
+donor_lock = threading.RLock()
