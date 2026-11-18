@@ -6,6 +6,7 @@ import struct
 
 # ─── MP4/MOV box parser (pure Python) ────────────────────────────────────────
 
+
 def parse_boxes(filepath, max_depth=0):
     """Parse top-level MP4/MOV boxes.
 
@@ -14,21 +15,21 @@ def parse_boxes(filepath, max_depth=0):
     """
     file_size = os.path.getsize(filepath)
     boxes = []
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         pos = 0
         while pos < file_size:
             f.seek(pos)
             hdr = f.read(8)
             if len(hdr) < 8:
                 break
-            box_size = struct.unpack('>I', hdr[:4])[0]
+            box_size = struct.unpack(">I", hdr[:4])[0]
             box_type = hdr[4:8]
 
             if box_size == 1:
                 ext = f.read(8)
                 if len(ext) < 8:
                     break
-                box_size = struct.unpack('>Q', ext)[0]
+                box_size = struct.unpack(">Q", ext)[0]
                 if box_size < 16:
                     break
             elif box_size == 0:
@@ -37,11 +38,11 @@ def parse_boxes(filepath, max_depth=0):
                 break
 
             try:
-                bt = box_type.decode('ascii')
+                bt = box_type.decode("ascii")
             except (UnicodeDecodeError, ValueError):
                 break
 
-            if not all(c.isalnum() or c in ' _-' for c in bt):
+            if not all(c.isalnum() or c in " _-" for c in bt):
                 break
 
             boxes.append((bt, pos, box_size))
@@ -59,35 +60,31 @@ def _get_mvhd_duration(filepath):
     moov_offset = None
     moov_size = None
     for bt, off, sz in boxes:
-        if bt == 'moov':
+        if bt == "moov":
             moov_offset = off
             moov_size = sz
             break
     if moov_offset is None:
         return None
     try:
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             f.seek(moov_offset + 8)
             moov_data = f.read(min(moov_size - 8, 1024))
         # Find mvhd child box
         pos = 0
         while pos < len(moov_data) - 8:
-            sz = struct.unpack('>I', moov_data[pos:pos + 4])[0]
-            bt = moov_data[pos + 4:pos + 8]
+            sz = struct.unpack(">I", moov_data[pos : pos + 4])[0]
+            bt = moov_data[pos + 4 : pos + 8]
             if sz < 8 or pos + sz > len(moov_data):
                 break
-            if bt == b'mvhd':
+            if bt == b"mvhd":
                 version = moov_data[pos + 8]
                 if version == 0:
-                    timescale = struct.unpack('>I',
-                        moov_data[pos + 20:pos + 24])[0]
-                    duration = struct.unpack('>I',
-                        moov_data[pos + 24:pos + 28])[0]
+                    timescale = struct.unpack(">I", moov_data[pos + 20 : pos + 24])[0]
+                    duration = struct.unpack(">I", moov_data[pos + 24 : pos + 28])[0]
                 else:
-                    timescale = struct.unpack('>I',
-                        moov_data[pos + 28:pos + 32])[0]
-                    duration = struct.unpack('>Q',
-                        moov_data[pos + 32:pos + 40])[0]
+                    timescale = struct.unpack(">I", moov_data[pos + 28 : pos + 32])[0]
+                    duration = struct.unpack(">Q", moov_data[pos + 32 : pos + 40])[0]
                 if timescale > 0:
                     return round(duration / timescale, 2)
                 return None
@@ -102,26 +99,26 @@ def parse_moov_children(data, offset=0):
     children = {}
     pos = offset
     while pos < len(data) - 8:
-        box_size = struct.unpack('>I', data[pos:pos + 4])[0]
-        box_type = data[pos + 4:pos + 8]
+        box_size = struct.unpack(">I", data[pos : pos + 4])[0]
+        box_type = data[pos + 4 : pos + 8]
         if box_size < 8 or pos + box_size > len(data):
             break
         try:
-            bt = box_type.decode('ascii')
+            bt = box_type.decode("ascii")
         except (UnicodeDecodeError, ValueError):
             break
-        children[bt] = data[pos:pos + box_size]
+        children[bt] = data[pos : pos + box_size]
         pos += box_size
     return children
 
 
 def find_box_in_data(data, box_type_str):
     """Find a box by type in binary data. Returns (offset, size) or None."""
-    target = box_type_str.encode('ascii')
+    target = box_type_str.encode("ascii")
     pos = 0
     while pos < len(data) - 8:
-        box_size = struct.unpack('>I', data[pos:pos + 4])[0]
-        box_type = data[pos + 4:pos + 8]
+        box_size = struct.unpack(">I", data[pos : pos + 4])[0]
+        box_type = data[pos + 4 : pos + 8]
         if box_size < 8 or pos + box_size > len(data):
             break
         if box_type == target:
@@ -134,8 +131,8 @@ def _extract_moov(filepath):
     """Extract raw moov atom bytes from a video file. Returns bytes or None."""
     boxes = parse_boxes(filepath)
     for bt, offset, size in boxes:
-        if bt == 'moov':
-            with open(filepath, 'rb') as f:
+        if bt == "moov":
+            with open(filepath, "rb") as f:
                 f.seek(offset)
                 return f.read(size)
     return None
@@ -145,8 +142,8 @@ def _extract_ftyp(filepath):
     """Extract raw ftyp atom bytes from a video file. Returns bytes or None."""
     boxes = parse_boxes(filepath)
     for bt, offset, size in boxes:
-        if bt == 'ftyp':
-            with open(filepath, 'rb') as f:
+        if bt == "ftyp":
+            with open(filepath, "rb") as f:
                 f.seek(offset)
                 return f.read(size)
     return None
@@ -156,8 +153,8 @@ def _walk_box_children(data):
     """Iterate over child boxes, yielding (type_bytes, offset, size)."""
     pos = 0
     while pos < len(data) - 8:
-        sz = struct.unpack('>I', data[pos:pos + 4])[0]
-        bt = data[pos + 4:pos + 8]
+        sz = struct.unpack(">I", data[pos : pos + 4])[0]
+        bt = data[pos + 4 : pos + 8]
         if sz < 8 or pos + sz > len(data):
             break
         yield bt, pos, sz
@@ -172,17 +169,17 @@ def _navigate_to_stsd(moov_data, sample_entry_types):
     """
     moov_body = moov_data[8:]
     for bt, tpos, tsz in _walk_box_children(moov_body):
-        if bt != b'trak':
+        if bt != b"trak":
             continue
-        trak_body = moov_body[tpos + 8:tpos + tsz]
-        path = [b'mdia', b'minf', b'stbl', b'stsd']
+        trak_body = moov_body[tpos + 8 : tpos + tsz]
+        path = [b"mdia", b"minf", b"stbl", b"stsd"]
         cur = trak_body
         found = True
         for target in path:
             hit = False
             for cbt, cpos, csz in _walk_box_children(cur):
                 if cbt == target:
-                    cur = cur[cpos + 8:cpos + csz]
+                    cur = cur[cpos + 8 : cpos + csz]
                     hit = True
                     break
             if not hit:
@@ -195,7 +192,7 @@ def _navigate_to_stsd(moov_data, sample_entry_types):
         stsd_body = cur[8:]
         for etype, epos, esz in _walk_box_children(stsd_body):
             if etype in sample_entry_types:
-                entry_data = stsd_body[epos + 8:epos + esz]
+                entry_data = stsd_body[epos + 8 : epos + esz]
                 if len(entry_data) >= 78:
                     return entry_data[78:], esz
     return None, 0
@@ -207,14 +204,14 @@ def _extract_avcc_params(moov_data):
     Navigates: moov > trak(video) > mdia > minf > stbl > stsd > avc1 > avcC.
     Returns dict with 'sps_list', 'pps_list', 'nal_length_size' or None.
     """
-    ext_data, _ = _navigate_to_stsd(moov_data, {b'avc1', b'avc3'})
+    ext_data, _ = _navigate_to_stsd(moov_data, {b"avc1", b"avc3"})
     if ext_data is None:
         return None
 
     for xbt, xpos, xsz in _walk_box_children(ext_data):
-        if xbt != b'avcC':
+        if xbt != b"avcC":
             continue
-        avcc = ext_data[xpos + 8:xpos + xsz]
+        avcc = ext_data[xpos + 8 : xpos + xsz]
         if len(avcc) < 7:
             return None
         profile = avcc[1]
@@ -226,11 +223,11 @@ def _extract_avcc_params(moov_data):
         for _ in range(num_sps):
             if off + 2 > len(avcc):
                 break
-            sps_len = struct.unpack('>H', avcc[off:off + 2])[0]
+            sps_len = struct.unpack(">H", avcc[off : off + 2])[0]
             off += 2
             if off + sps_len > len(avcc):
                 break
-            sps_list.append(bytes(avcc[off:off + sps_len]))
+            sps_list.append(bytes(avcc[off : off + sps_len]))
             off += sps_len
         if off >= len(avcc):
             return None
@@ -240,18 +237,18 @@ def _extract_avcc_params(moov_data):
         for _ in range(num_pps):
             if off + 2 > len(avcc):
                 break
-            pps_len = struct.unpack('>H', avcc[off:off + 2])[0]
+            pps_len = struct.unpack(">H", avcc[off : off + 2])[0]
             off += 2
             if off + pps_len > len(avcc):
                 break
-            pps_list.append(bytes(avcc[off:off + pps_len]))
+            pps_list.append(bytes(avcc[off : off + pps_len]))
             off += pps_len
         return {
-            'sps_list': sps_list,
-            'pps_list': pps_list,
-            'nal_length_size': nal_length_size,
-            'profile': profile,
-            'level': level,
+            "sps_list": sps_list,
+            "pps_list": pps_list,
+            "nal_length_size": nal_length_size,
+            "profile": profile,
+            "level": level,
         }
     return None
 
@@ -262,14 +259,14 @@ def _extract_hvcc_params(moov_data):
     Navigates: moov > trak(video) > mdia > minf > stbl > stsd > hvc1/hev1 > hvcC.
     Returns dict with 'vps_list', 'sps_list', 'pps_list', 'nal_length_size' or None.
     """
-    ext_data, _ = _navigate_to_stsd(moov_data, {b'hvc1', b'hev1'})
+    ext_data, _ = _navigate_to_stsd(moov_data, {b"hvc1", b"hev1"})
     if ext_data is None:
         return None
 
     for xbt, xpos, xsz in _walk_box_children(ext_data):
-        if xbt != b'hvcC':
+        if xbt != b"hvcC":
             continue
-        hvcc = ext_data[xpos + 8:xpos + xsz]
+        hvcc = ext_data[xpos + 8 : xpos + xsz]
         if len(hvcc) < 23:
             return None
         nal_length_size = (hvcc[21] & 0x03) + 1
@@ -282,16 +279,16 @@ def _extract_hvcc_params(moov_data):
             if off + 3 > len(hvcc):
                 break
             nal_type = hvcc[off] & 0x3F
-            num_nalus = struct.unpack('>H', hvcc[off + 1:off + 3])[0]
+            num_nalus = struct.unpack(">H", hvcc[off + 1 : off + 3])[0]
             off += 3
             for _ in range(num_nalus):
                 if off + 2 > len(hvcc):
                     break
-                nal_len = struct.unpack('>H', hvcc[off:off + 2])[0]
+                nal_len = struct.unpack(">H", hvcc[off : off + 2])[0]
                 off += 2
                 if off + nal_len > len(hvcc):
                     break
-                nal_data = bytes(hvcc[off:off + nal_len])
+                nal_data = bytes(hvcc[off : off + nal_len])
                 off += nal_len
                 if nal_type == 32:
                     vps_list.append(nal_data)
@@ -301,10 +298,10 @@ def _extract_hvcc_params(moov_data):
                     pps_list.append(nal_data)
         if sps_list:
             return {
-                'vps_list': vps_list,
-                'sps_list': sps_list,
-                'pps_list': pps_list,
-                'nal_length_size': nal_length_size,
+                "vps_list": vps_list,
+                "sps_list": sps_list,
+                "pps_list": pps_list,
+                "nal_length_size": nal_length_size,
             }
     return None
 
@@ -321,9 +318,9 @@ def _scan_for_moov(filepath, start_offset):
     if search_size < 16:
         return None
 
-    target = b'moov'
+    target = b"moov"
     chunk_size = 256 * 1024
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         offset = start_offset
         while offset < file_size - 8:
             f.seek(offset)
@@ -338,8 +335,8 @@ def _scan_for_moov(filepath, start_offset):
                     break
                 # The 4 bytes before 'moov' should be the box size
                 box_offset = offset + idx - 4
-                size_bytes = chunk[idx - 4:idx]
-                box_size = struct.unpack('>I', size_bytes)[0]
+                size_bytes = chunk[idx - 4 : idx]
+                box_size = struct.unpack(">I", size_bytes)[0]
 
                 if box_size < 16 or box_offset + box_size > file_size:
                     pos = idx + 1
@@ -356,11 +353,11 @@ def _scan_for_moov(filepath, start_offset):
                 child_pos = 8
                 has_valid_child = False
                 while child_pos < len(moov_data) - 8:
-                    csz = struct.unpack('>I', moov_data[child_pos:child_pos + 4])[0]
-                    ctype = moov_data[child_pos + 4:child_pos + 8]
+                    csz = struct.unpack(">I", moov_data[child_pos : child_pos + 4])[0]
+                    ctype = moov_data[child_pos + 4 : child_pos + 8]
                     if csz < 8:
                         break
-                    if ctype in (b'mvhd', b'trak', b'udta', b'meta'):
+                    if ctype in (b"mvhd", b"trak", b"udta", b"meta"):
                         has_valid_child = True
                         break
                     child_pos += csz
@@ -375,6 +372,7 @@ def _scan_for_moov(filepath, start_offset):
 
 # ─── Recovery functions ──────────────────────────────────────────────────────
 
+
 def _adjust_stco(moov_data, delta):
     """Adjust all stco (chunk offset) entries in moov by delta bytes.
 
@@ -387,38 +385,44 @@ def _adjust_stco(moov_data, delta):
     def walk(data, base_offset):
         pos = 0
         while pos < len(data) - 8:
-            box_size = struct.unpack('>I', data[pos:pos + 4])[0]
-            box_type = data[pos + 4:pos + 8]
+            box_size = struct.unpack(">I", data[pos : pos + 4])[0]
+            box_type = data[pos + 4 : pos + 8]
             if box_size < 8 or pos + box_size > len(data):
                 break
 
-            if box_type == b'stco':
+            if box_type == b"stco":
                 # stco: version(1) + flags(3) + entry_count(4) + entries(4 each)
                 content_start = base_offset + pos + 8
-                entry_count = struct.unpack('>I',
-                    result[content_start + 4:content_start + 8])[0]
+                entry_count = struct.unpack(">I", result[content_start + 4 : content_start + 8])[0]
                 for i in range(entry_count):
                     off = content_start + 8 + i * 4
                     if off + 4 <= len(result):
-                        old_val = struct.unpack('>I', result[off:off + 4])[0]
+                        old_val = struct.unpack(">I", result[off : off + 4])[0]
                         new_val = max(0, old_val + delta)
-                        struct.pack_into('>I', result, off, new_val)
+                        struct.pack_into(">I", result, off, new_val)
 
-            elif box_type == b'co64':
+            elif box_type == b"co64":
                 content_start = base_offset + pos + 8
-                entry_count = struct.unpack('>I',
-                    result[content_start + 4:content_start + 8])[0]
+                entry_count = struct.unpack(">I", result[content_start + 4 : content_start + 8])[0]
                 for i in range(entry_count):
                     off = content_start + 8 + i * 8
                     if off + 8 <= len(result):
-                        old_val = struct.unpack('>Q', result[off:off + 8])[0]
+                        old_val = struct.unpack(">Q", result[off : off + 8])[0]
                         new_val = max(0, old_val + delta)
-                        struct.pack_into('>Q', result, off, new_val)
+                        struct.pack_into(">Q", result, off, new_val)
 
-            elif box_type in (b'moov', b'trak', b'mdia', b'minf', b'stbl',
-                              b'edts', b'udta', b'dinf'):
+            elif box_type in (
+                b"moov",
+                b"trak",
+                b"mdia",
+                b"minf",
+                b"stbl",
+                b"edts",
+                b"udta",
+                b"dinf",
+            ):
                 # Container box — recurse into children
-                child_data = data[pos + 8:pos + box_size]
+                child_data = data[pos + 8 : pos + box_size]
                 walk(child_data, base_offset + pos + 8)
 
             pos += box_size
@@ -440,45 +444,53 @@ def _truncate_stsz(moov_data, target_count):
     def adjust_table(data, base_offset, box_type_bytes, entry_size):
         pos = 0
         while pos < len(data) - 8:
-            box_size = struct.unpack('>I', data[pos:pos + 4])[0]
-            box_type = data[pos + 4:pos + 8]
+            box_size = struct.unpack(">I", data[pos : pos + 4])[0]
+            box_type = data[pos + 4 : pos + 8]
             if box_size < 8 or pos + box_size > len(data):
                 break
 
             if box_type == box_type_bytes:
                 content_start = base_offset + pos + 8
-                if box_type_bytes == b'stsz':
+                if box_type_bytes == b"stsz":
                     # stsz: version(1) + flags(3) + sample_size(4) + count(4)
-                    old_count = struct.unpack('>I',
-                        result[content_start + 8:content_start + 12])[0]
+                    old_count = struct.unpack(">I", result[content_start + 8 : content_start + 12])[
+                        0
+                    ]
                     if target_count < old_count:
-                        struct.pack_into('>I', result, content_start + 8,
-                                         target_count)
-                elif box_type_bytes == b'stss':
+                        struct.pack_into(">I", result, content_start + 8, target_count)
+                elif box_type_bytes == b"stss":
                     # stss: version(1) + flags(3) + count(4) + entries
-                    old_count = struct.unpack('>I',
-                        result[content_start + 4:content_start + 8])[0]
+                    old_count = struct.unpack(">I", result[content_start + 4 : content_start + 8])[
+                        0
+                    ]
                     # Remove entries beyond target_count
                     new_count = 0
                     for i in range(old_count):
                         off = content_start + 8 + i * 4
                         if off + 4 <= len(result):
-                            val = struct.unpack('>I', result[off:off + 4])[0]
+                            val = struct.unpack(">I", result[off : off + 4])[0]
                             if val <= target_count:
                                 new_count += 1
                             else:
                                 break
-                    struct.pack_into('>I', result, content_start + 4, new_count)
+                    struct.pack_into(">I", result, content_start + 4, new_count)
 
-            elif box_type in (b'moov', b'trak', b'mdia', b'minf', b'stbl',
-                              b'edts', b'udta', b'dinf'):
-                child_data = data[pos + 8:pos + box_size]
-                adjust_table(child_data, base_offset + pos + 8,
-                             box_type_bytes, entry_size)
+            elif box_type in (
+                b"moov",
+                b"trak",
+                b"mdia",
+                b"minf",
+                b"stbl",
+                b"edts",
+                b"udta",
+                b"dinf",
+            ):
+                child_data = data[pos + 8 : pos + box_size]
+                adjust_table(child_data, base_offset + pos + 8, box_type_bytes, entry_size)
             pos += box_size
 
     walk_data = moov_data[8:]
-    adjust_table(walk_data, 8, b'stsz', 4)
-    adjust_table(walk_data, 8, b'stss', 4)
+    adjust_table(walk_data, 8, b"stsz", 4)
+    adjust_table(walk_data, 8, b"stss", 4)
 
     return bytes(result)

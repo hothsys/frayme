@@ -14,15 +14,16 @@ from .state import donor_lock, donor_pool, scan_state
 
 # ─── Directory scanner ───────────────────────────────────────────────────────
 
+
 def _check_and_describe(fpath, should_stop):
     """check_video, plus what the rows show about a damaged file. Runs on
     the scan's worker threads, since describing takes about half a second."""
     status, reason, details = check_video(fpath, should_stop)
-    if status not in ('ok', 'not_video'):
+    if status not in ("ok", "not_video"):
         try:
-            details['findings'] = describe_damaged(fpath, status, details)
+            details["findings"] = describe_damaged(fpath, status, details)
         except Exception:
-            pass    # the row just shows less
+            pass  # the row just shows less
     return status, reason, details
 
 
@@ -33,18 +34,19 @@ def scan_directory_gen(root_dir, scan_id=None):
     """
 
     def cancelled():
-        return (scan_state['cancelled'] or
-                (scan_id is not None and scan_state.get('scan_id') != scan_id))
+        return scan_state["cancelled"] or (
+            scan_id is not None and scan_state.get("scan_id") != scan_id
+        )
 
     if not os.path.exists(root_dir):
-        yield {'type': 'error', 'message': f'Path does not exist: {root_dir}'}
+        yield {"type": "error", "message": f"Path does not exist: {root_dir}"}
         return
 
     if not os.path.isdir(root_dir):
-        yield {'type': 'error', 'message': f'Not a directory: {root_dir}'}
+        yield {"type": "error", "message": f"Not a directory: {root_dir}"}
         return
 
-    yield {'type': 'counting', 'found': 0, 'dirs': 0, 'current': root_dir}
+    yield {"type": "counting", "found": 0, "dirs": 0, "current": root_dir}
 
     # Walking a large drive can take a while; report progress so the UI
     # doesn't look stuck before the first file is checked
@@ -53,10 +55,9 @@ def scan_directory_gen(root_dir, scan_id=None):
     last_report = time.time()
     for dirpath, dirnames, filenames in os.walk(root_dir):
         if cancelled():
-            yield {'type': 'cancelled', 'scanned': 0, 'issues': 0}
+            yield {"type": "cancelled", "scanned": 0, "issues": 0}
             return
-        dirnames[:] = [d for d in dirnames
-                       if not d.startswith('.') and d != '__MACOSX']
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "__MACOSX"]
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
             if ext in VIDEO_EXTS or ext in OTHER_VIDEO_EXTS:
@@ -64,14 +65,18 @@ def scan_directory_gen(root_dir, scan_id=None):
         dirs_walked += 1
         if time.time() - last_report >= 0.25:
             last_report = time.time()
-            yield {'type': 'counting', 'found': len(all_files),
-                   'dirs': dirs_walked, 'current': dirpath}
+            yield {
+                "type": "counting",
+                "found": len(all_files),
+                "dirs": dirs_walked,
+                "current": dirpath,
+            }
 
     total = len(all_files)
-    yield {'type': 'total', 'total': total}
+    yield {"type": "total", "total": total}
 
     if total == 0:
-        yield {'type': 'complete', 'scanned': 0, 'issues': 0, 'elapsed': 0}
+        yield {"type": "complete", "scanned": 0, "issues": 0, "elapsed": 0}
         return
 
     scanned = 0
@@ -81,10 +86,10 @@ def scan_directory_gen(root_dir, scan_id=None):
 
     for batch_start in range(0, total, batch_size):
         if cancelled():
-            yield {'type': 'cancelled', 'scanned': scanned, 'issues': issue_count}
+            yield {"type": "cancelled", "scanned": scanned, "issues": issue_count}
             return
 
-        batch = all_files[batch_start:batch_start + batch_size]
+        batch = all_files[batch_start : batch_start + batch_size]
         futures = {}
 
         # Not a `with` block: its exit waits for every in-flight file, which
@@ -106,13 +111,13 @@ def scan_directory_gen(root_dir, scan_id=None):
                 except ScanCancelled:
                     break
                 except Exception as e:
-                    status, reason, details = 'error', str(e), {}
+                    status, reason, details = "error", str(e), {}
                 scanned += 1
 
                 fname = os.path.basename(fpath)
                 fdir = os.path.dirname(fpath)
                 ext = os.path.splitext(fname)[1].lower()
-                fsize = details.get('file_size', 0)
+                fsize = details.get("file_size", 0)
                 # Mark the folder as scanned even if it has no healthy files,
                 # so _ensure_donor_pool doesn't recheck it during recovery
                 with donor_lock:
@@ -121,40 +126,40 @@ def scan_directory_gen(root_dir, scan_id=None):
                 elapsed = time.time() - start_time
                 rate = scanned / elapsed if elapsed > 0 else 0
                 remaining = (total - scanned) / rate if rate > 0 else 0
-                eta_str = ''
+                eta_str = ""
                 if remaining > 0:
                     m, s = divmod(int(remaining), 60)
-                    eta_str = f'{m}m {s}s' if m else f'{s}s'
+                    eta_str = f"{m}m {s}s" if m else f"{s}s"
 
-                file_duration = details.get('duration')
+                file_duration = details.get("duration")
 
                 yield {
-                    'type': 'scanning',
-                    'file': fname,
-                    'dir': fdir,
-                    'scanned': scanned,
-                    'total': total,
-                    'issues': issue_count,
-                    'eta': eta_str,
-                    'duration': file_duration,
+                    "type": "scanning",
+                    "file": fname,
+                    "dir": fdir,
+                    "scanned": scanned,
+                    "total": total,
+                    "issues": issue_count,
+                    "eta": eta_str,
+                    "duration": file_duration,
                 }
 
-                if status == 'not_video':
+                if status == "not_video":
                     # Neither an issue nor usable as a recovery donor
                     continue
-                if status != 'ok':
+                if status != "ok":
                     issue_count += 1
                     event = {
-                        'type': 'issue',
-                        'filepath': fpath,
-                        'filename': fname,
-                        'dir': fdir,
-                        'ext': ext,
-                        'file_size': fsize,
-                        'status': status,
-                        'reason': reason or '',
-                        'details': details,
-                        'duration': file_duration,
+                        "type": "issue",
+                        "filepath": fpath,
+                        "filename": fname,
+                        "dir": fdir,
+                        "ext": ext,
+                        "file_size": fsize,
+                        "status": status,
+                        "reason": reason or "",
+                        "details": details,
+                        "duration": file_duration,
                     }
                     yield event
                 elif _usable_donor(status, details):
@@ -167,9 +172,8 @@ def scan_directory_gen(root_dir, scan_id=None):
             executor.shutdown(wait=False)
 
         if cancelled():
-            yield {'type': 'cancelled', 'scanned': scanned, 'issues': issue_count}
+            yield {"type": "cancelled", "scanned": scanned, "issues": issue_count}
             return
 
     elapsed = round(time.time() - start_time, 1)
-    yield {'type': 'complete', 'scanned': scanned, 'issues': issue_count,
-           'elapsed': elapsed}
+    yield {"type": "complete", "scanned": scanned, "issues": issue_count, "elapsed": elapsed}

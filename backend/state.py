@@ -11,10 +11,10 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ─── Global state ─────────────────────────────────────────────────────────────
 
 scan_state = {
-    'running': False,
-    'cancelled': False,
-    'results': [],
-    'scan_id': 0,
+    "running": False,
+    "cancelled": False,
+    "results": [],
+    "scan_id": 0,
 }
 
 

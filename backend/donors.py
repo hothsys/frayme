@@ -13,23 +13,22 @@ from .state import donor_lock, donor_pool
 from .tools import _ffprobe_path, has_ffprobe
 
 
-def _collect_sps_candidates(fdir, primary_params, codec='h264'):
+def _collect_sps_candidates(fdir, primary_params, codec="h264"):
     """Collect unique SPS/PPS (and VPS for HEVC) from healthy donor pool files.
 
     Returns a list of (vps_list, sps_list, pps_list) tuples with the primary
     donor's params first, followed by other unique variants from the same
     directory. For H.264, vps_list is always [].
     """
-    extract_fn = _extract_hvcc_params if codec == 'hevc' else _extract_avcc_params
+    extract_fn = _extract_hvcc_params if codec == "hevc" else _extract_avcc_params
     seen = set()
     candidates = []
 
     # Primary donor first
-    vps = primary_params.get('vps_list', [])
-    key = tuple(s.hex() for s in primary_params['sps_list'])
+    vps = primary_params.get("vps_list", [])
+    key = tuple(s.hex() for s in primary_params["sps_list"])
     seen.add(key)
-    candidates.append((vps, primary_params['sps_list'],
-                        primary_params['pps_list']))
+    candidates.append((vps, primary_params["sps_list"], primary_params["pps_list"]))
 
     # Check other healthy files in the pool
     for pool_file in _donor_files(fdir):
@@ -40,11 +39,12 @@ def _collect_sps_candidates(fdir, primary_params, codec='h264'):
             params = extract_fn(moov)
             if not params:
                 continue
-            key = tuple(s.hex() for s in params['sps_list'])
+            key = tuple(s.hex() for s in params["sps_list"])
             if key not in seen:
                 seen.add(key)
-                candidates.append((params.get('vps_list', []),
-                                   params['sps_list'], params['pps_list']))
+                candidates.append(
+                    (params.get("vps_list", []), params["sps_list"], params["pps_list"])
+                )
         except Exception:
             continue
 
@@ -55,7 +55,7 @@ def _find_matching_donor(filepath, candidates):
     """Pick the best donor from candidates by filename prefix matching."""
     base = os.path.splitext(os.path.basename(filepath))[0]
     # Strip trailing digits/underscores to get the device/naming prefix
-    prefix = re.sub(r'[_\-]?\d+$', '', base)
+    prefix = re.sub(r"[_\-]?\d+$", "", base)
 
     best = None
     best_len = -1
@@ -63,7 +63,7 @@ def _find_matching_donor(filepath, candidates):
         if os.path.normpath(c) == os.path.normpath(filepath):
             continue
         cbase = os.path.splitext(os.path.basename(c))[0]
-        cpfx = re.sub(r'[_\-]?\d+$', '', cbase)
+        cpfx = re.sub(r"[_\-]?\d+$", "", cbase)
         if cpfx == prefix and len(cpfx) > best_len:
             best = c
             best_len = len(cpfx)
@@ -82,11 +82,22 @@ def _get_donor_rotation(donor_path):
         return None
     try:
         cmd = subprocess.run(
-            [_ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-             '-show_entries', 'stream_side_data=rotation',
-             '-of', 'csv=p=0', donor_path],
-            capture_output=True, timeout=10)
-        val = cmd.stdout.decode().strip().rstrip(',')
+            [
+                _ffprobe_path,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream_side_data=rotation",
+                "-of",
+                "csv=p=0",
+                donor_path,
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        val = cmd.stdout.decode().strip().rstrip(",")
         if val:
             return int(float(val))
     except Exception:
@@ -105,11 +116,22 @@ def _most_common_rate_donor(donors):
     for donor in donors:
         try:
             r = subprocess.run(
-                [_ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-                 '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0',
-                 donor],
-                capture_output=True, timeout=10)
-            rates[donor] = r.stdout.decode().strip().rstrip(',')
+                [
+                    _ffprobe_path,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=r_frame_rate",
+                    "-of",
+                    "csv=p=0",
+                    donor,
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+            rates[donor] = r.stdout.decode().strip().rstrip(",")
         except Exception:
             continue
     if not rates:
@@ -120,13 +142,14 @@ def _most_common_rate_donor(donors):
 
 # ─── Recovery execution ───────────────────────────────────────────────────────
 
+
 def _usable_donor(status, details):
     """A donor must be a healthy MP4/MOV with a moov to borrow parameters from.
 
     Healthy AVIs and other formats used to enter the pool, and recovery then
     failed with "Donor file has no moov atom".
     """
-    return status == 'ok' and bool(details.get('has_moov'))
+    return status == "ok" and bool(details.get("has_moov"))
 
 
 def _donor_files(fdir):
@@ -176,8 +199,7 @@ def _ensure_donor_pool(fdir):
             names = []
         for name in names:
             fpath = os.path.join(fdir, name)
-            if (os.path.splitext(name)[1].lower() not in VIDEO_EXTS
-                    or not os.path.isfile(fpath)):
+            if os.path.splitext(name)[1].lower() not in VIDEO_EXTS or not os.path.isfile(fpath):
                 continue
             try:
                 status, _, details = check_video(fpath)

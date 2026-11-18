@@ -13,17 +13,30 @@ from .tools import _ffmpeg_path, has_ffmpeg
 
 
 # Largest plausible size per NAL type; anything bigger is junk read as a length
-_H264_NAL_MAX = {1: 8 << 20, 5: 8 << 20,      # slices
-                 6: 256 << 10,                 # SEI
-                 7: 1024, 8: 1024,             # SPS, PPS
-                 9: 8, 12: 1 << 20}            # AUD, filler
+_H264_NAL_MAX = {
+    1: 8 << 20,
+    5: 8 << 20,  # slices
+    6: 256 << 10,  # SEI
+    7: 1024,
+    8: 1024,  # SPS, PPS
+    9: 8,
+    12: 1 << 20,
+}  # AUD, filler
 
 
 _HEVC_NAL_MAX = {t: 8 << 20 for t in list(range(10)) + list(range(16, 22))}
 
 
-_HEVC_NAL_MAX.update({32: 1024, 33: 1024, 34: 1024, 35: 8,   # VPS, SPS, PPS, AUD
-                      39: 256 << 10, 40: 256 << 10})          # SEI
+_HEVC_NAL_MAX.update(
+    {
+        32: 1024,
+        33: 1024,
+        34: 1024,
+        35: 8,  # VPS, SPS, PPS, AUD
+        39: 256 << 10,
+        40: 256 << 10,
+    }
+)  # SEI
 
 
 # A position counts as video only if this many valid NALs chain from it. Two
@@ -93,19 +106,19 @@ def _parse_h264_sps_order(sps):
     profile = d[1] if len(d) > 3 else None
     if profile is None:
         return None
-    bit = 32                                   # NAL header, profile, constraints, level
+    bit = 32  # NAL header, profile, constraints, level
     sps_id, bit = _read_ue(d, bit)
     separate_colour_plane = 0
-    scaling = 0                                # 0 flat, 1 spec defaults, 2 custom lists
+    scaling = 0  # 0 flat, 1 spec defaults, 2 custom lists
     if profile in (100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135):
         chroma_format, bit = _read_ue(d, bit)
         if chroma_format is None:
             return None
         if chroma_format == 3:
             separate_colour_plane, bit = _read_bits(d, bit, 1)
-        _, bit = _read_ue(d, bit)              # bit_depth_luma_minus8
-        _, bit = _read_ue(d, bit)              # bit_depth_chroma_minus8
-        _, bit = _read_bits(d, bit, 1)         # qpprime_y_zero_transform_bypass
+        _, bit = _read_ue(d, bit)  # bit_depth_luma_minus8
+        _, bit = _read_ue(d, bit)  # bit_depth_chroma_minus8
+        _, bit = _read_bits(d, bit, 1)  # qpprime_y_zero_transform_bypass
         scaling, bit = _read_bits(d, bit, 1)
         if scaling:
             for i in range(12 if chroma_format == 3 else 8):
@@ -131,31 +144,37 @@ def _parse_h264_sps_order(sps):
             return None
         log2_max_poc_lsb += 4
     elif poc_type == 1:
-        return None                            # rare; not needed so far
-    _, bit = _read_ue(d, bit)                  # max_num_ref_frames
-    _, bit = _read_bits(d, bit, 1)             # gaps_in_frame_num_allowed
-    mbw, bit = _read_ue(d, bit)                # pic_width_in_mbs_minus1
-    mbh, bit = _read_ue(d, bit)                # pic_height_in_map_units_minus1
+        return None  # rare; not needed so far
+    _, bit = _read_ue(d, bit)  # max_num_ref_frames
+    _, bit = _read_bits(d, bit, 1)  # gaps_in_frame_num_allowed
+    mbw, bit = _read_ue(d, bit)  # pic_width_in_mbs_minus1
+    mbh, bit = _read_ue(d, bit)  # pic_height_in_map_units_minus1
     frame_mbs_only, bit = _read_bits(d, bit, 1)
     if frame_mbs_only is None or mbw is None or mbh is None:
         return None
     width, height = (mbw + 1) * 16, (mbh + 1) * 16 * (2 - frame_mbs_only)
     if not frame_mbs_only:
-        _, bit = _read_bits(d, bit, 1)         # mb_adaptive_frame_field
-    _, bit = _read_bits(d, bit, 1)             # direct_8x8_inference
+        _, bit = _read_bits(d, bit, 1)  # mb_adaptive_frame_field
+    _, bit = _read_bits(d, bit, 1)  # direct_8x8_inference
     cropping, bit = _read_bits(d, bit, 1)
-    if cropping:                               # 4:2:0 crop units are 2 pixels
+    if cropping:  # 4:2:0 crop units are 2 pixels
         crop = []
         for _ in range(4):
             value, bit = _read_ue(d, bit)
             crop.append(value or 0)
         width -= 2 * (crop[0] + crop[1])
         height -= 2 * (crop[2] + crop[3]) * (2 - frame_mbs_only)
-    return {'sps_id': sps_id, 'log2_max_frame_num': log2_max_frame_num + 4,
-            'poc_type': poc_type, 'log2_max_poc_lsb': log2_max_poc_lsb,
-            'frame_mbs_only': frame_mbs_only,
-            'separate_colour_plane': separate_colour_plane,
-            'width': width, 'height': height, 'scaling': scaling}
+    return {
+        "sps_id": sps_id,
+        "log2_max_frame_num": log2_max_frame_num + 4,
+        "poc_type": poc_type,
+        "log2_max_poc_lsb": log2_max_poc_lsb,
+        "frame_mbs_only": frame_mbs_only,
+        "separate_colour_plane": separate_colour_plane,
+        "width": width,
+        "height": height,
+        "scaling": scaling,
+    }
 
 
 def _parse_h264_pps_ids(pps):
@@ -176,25 +195,25 @@ def _h264_slice_poc_lsb(nal, sps_by_id, pps_by_id):
     """
     d = _rbsp(nal, 48)
     bit = 8
-    _, bit = _read_ue(d, bit)                  # first_mb_in_slice
-    _, bit = _read_ue(d, bit)                  # slice_type
+    _, bit = _read_ue(d, bit)  # first_mb_in_slice
+    _, bit = _read_ue(d, bit)  # slice_type
     pps_id, bit = _read_ue(d, bit)
     sps = sps_by_id.get(pps_by_id.get(pps_id))
-    if sps is None or sps['poc_type'] != 0:
+    if sps is None or sps["poc_type"] != 0:
         return None
-    if sps['separate_colour_plane']:
+    if sps["separate_colour_plane"]:
         _, bit = _read_bits(d, bit, 2)
-    _, bit = _read_bits(d, bit, sps['log2_max_frame_num'])
-    if not sps['frame_mbs_only']:
+    _, bit = _read_bits(d, bit, sps["log2_max_frame_num"])
+    if not sps["frame_mbs_only"]:
         field_pic, bit = _read_bits(d, bit, 1)
         if field_pic:
             return None
     if nal[0] & 0x1F == 5:
-        _, bit = _read_ue(d, bit)              # idr_pic_id
-    lsb, bit = _read_bits(d, bit, sps['log2_max_poc_lsb'])
+        _, bit = _read_ue(d, bit)  # idr_pic_id
+    lsb, bit = _read_bits(d, bit, sps["log2_max_poc_lsb"])
     if lsb is None:
         return None
-    return lsb, 1 << sps['log2_max_poc_lsb']
+    return lsb, 1 << sps["log2_max_poc_lsb"]
 
 
 def _h264_slice_frame_num(nal, sps_by_id, pps_by_id):
@@ -202,35 +221,35 @@ def _h264_slice_frame_num(nal, sps_by_id, pps_by_id):
     parameter sets are unknown or the slice is a field."""
     d = _rbsp(nal, 32)
     bit = 8
-    _, bit = _read_ue(d, bit)                  # first_mb_in_slice
-    _, bit = _read_ue(d, bit)                  # slice_type
+    _, bit = _read_ue(d, bit)  # first_mb_in_slice
+    _, bit = _read_ue(d, bit)  # slice_type
     pps_id, bit = _read_ue(d, bit)
     sps = sps_by_id.get(pps_by_id.get(pps_id))
     if sps is None:
         return None
-    if sps['separate_colour_plane']:
+    if sps["separate_colour_plane"]:
         _, bit = _read_bits(d, bit, 2)
-    frame_num, bit = _read_bits(d, bit, sps['log2_max_frame_num'])
+    frame_num, bit = _read_bits(d, bit, sps["log2_max_frame_num"])
     if frame_num is None:
         return None
-    if not sps['frame_mbs_only']:
+    if not sps["frame_mbs_only"]:
         field_pic, _ = _read_bits(d, bit, 1)
         if field_pic is None or field_pic:
             return None
-    return frame_num, 1 << sps['log2_max_frame_num']
+    return frame_num, 1 << sps["log2_max_frame_num"]
 
 
 def _plausible_slice_header(header, codec):
     """Check the first slice header fields of a slice NAL (header includes the NAL header)."""
-    if codec == 'hevc':
+    if codec == "hevc":
         nal_type = (header[0] >> 1) & 0x3F
-        bit = 16 + 1                       # NAL header, first_slice_segment_in_pic_flag
+        bit = 16 + 1  # NAL header, first_slice_segment_in_pic_flag
         if 16 <= nal_type <= 23:
-            bit += 1                       # no_output_of_prior_pics_flag
+            bit += 1  # no_output_of_prior_pics_flag
         pps_id, _ = _read_ue(header, bit)
         return pps_id is not None and pps_id <= 63
     first_mb, bit = _read_ue(header, 8)
-    if first_mb is None or first_mb > 139264:     # macroblocks in an 8K frame
+    if first_mb is None or first_mb > 139264:  # macroblocks in an 8K frame
         return False
     slice_type, bit = _read_ue(header, bit)
     if slice_type is None or slice_type > 9:
@@ -243,8 +262,9 @@ def _plausible_slice_header(header, codec):
     return pps_id is not None and pps_id <= 255
 
 
-def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
-                        nal_length_size=4, raw_data=False, codec='h264'):
+def _scan_mdat_for_nals(
+    filepath, mdat_offset, mdat_size, nal_length_size=4, raw_data=False, codec="h264"
+):
     """Scan mdat for length-prefixed NAL units, skipping audio chunks.
 
     Supports both H.264 and HEVC codecs. Reads through mmap.
@@ -262,12 +282,11 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
     was destroyed.
     """
 
-    max_sizes = _HEVC_NAL_MAX if codec == 'hevc' else _H264_NAL_MAX
-    header_size = 2 if codec == 'hevc' else 1
-    slice_types = (set(range(10)) | set(range(16, 22)) if codec == 'hevc'
-                   else {1, 5})
+    max_sizes = _HEVC_NAL_MAX if codec == "hevc" else _H264_NAL_MAX
+    header_size = 2 if codec == "hevc" else 1
+    slice_types = set(range(10)) | set(range(16, 22)) if codec == "hevc" else {1, 5}
 
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         if os.fstat(f.fileno()).st_size == 0:
             return []
         m = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
@@ -276,7 +295,7 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
         if raw_data:
             data_start = mdat_offset
         else:
-            box_sz = struct.unpack_from('>I', m, mdat_offset)[0]
+            box_sz = struct.unpack_from(">I", m, mdat_offset)[0]
             data_start = mdat_offset + (16 if box_sz == 1 else 8)
         data_end = min(mdat_offset + mdat_size, len(m))
 
@@ -285,11 +304,11 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
             hdr_pos = pos + nal_length_size
             if hdr_pos + header_size > data_end:
                 return None
-            nal_len = int.from_bytes(m[pos:hdr_pos], 'big')
+            nal_len = int.from_bytes(m[pos:hdr_pos], "big")
             nal_byte = m[hdr_pos]
-            if nal_byte & 0x80:            # forbidden_zero_bit
+            if nal_byte & 0x80:  # forbidden_zero_bit
                 return None
-            if codec == 'hevc':
+            if codec == "hevc":
                 nal_type = (nal_byte >> 1) & 0x3F
                 # layer_id must be 0, nuh_temporal_id_plus1 must be >= 1
                 nal_byte2 = m[hdr_pos + 1]
@@ -298,11 +317,16 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
             else:
                 nal_type = nal_byte & 0x1F
             limit = max_sizes.get(nal_type)
-            if (limit is None or nal_len < header_size or nal_len > limit
-                    or hdr_pos + nal_len > data_end):
+            if (
+                limit is None
+                or nal_len < header_size
+                or nal_len > limit
+                or hdr_pos + nal_len > data_end
+            ):
                 return None
             if nal_type in slice_types and not _plausible_slice_header(
-                    m[hdr_pos:hdr_pos + min(nal_len, 16)], codec):
+                m[hdr_pos : hdr_pos + min(nal_len, 16)], codec
+            ):
                 return None
             return nal_len
 
@@ -310,18 +334,24 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
             # Access unit delimiter: fixed length, and the byte after the NAL
             # header is 3 bits of picture type, a stop bit, then zeros
             hdr_pos = pos + nal_length_size
-            if codec == 'hevc':
-                return (nal_len == 3 and (m[hdr_pos] >> 1) & 0x3F == 35
-                        and m[hdr_pos + 2] & 0x1F == 0x10)
+            if codec == "hevc":
+                return (
+                    nal_len == 3
+                    and (m[hdr_pos] >> 1) & 0x3F == 35
+                    and m[hdr_pos + 2] & 0x1F == 0x10
+                )
             return nal_len == 2 and m[hdr_pos] & 0x1F == 9 and m[hdr_pos + 1] & 0x1F == 0x10
 
         def clean_payload(pos, nal_len):
             # The spec forbids 00 00 00/01/02 inside a NAL (trailing zero
             # padding aside); a random stretch of data rarely avoids them
             start = pos + nal_length_size
-            body = m[start:start + nal_len].rstrip(b'\x00')
-            return (b'\x00\x00\x00' not in body and b'\x00\x00\x01' not in body
-                    and b'\x00\x00\x02' not in body)
+            body = m[start : start + nal_len].rstrip(b"\x00")
+            return (
+                b"\x00\x00\x00" not in body
+                and b"\x00\x00\x01" not in body
+                and b"\x00\x00\x02" not in body
+            )
 
         def chain_at(pos):
             first_is_aud = False
@@ -353,15 +383,16 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
         # every frame up to the next keyframe.
         candidate_re = None
         if nal_length_size == 4:
-            if codec == 'hevc':
+            if codec == "hevc":
                 first = bytes(sorted({t << 1 for t in max_sizes}))
                 candidate_re = re.compile(
-                    rb'(?=\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb'][\x01-\x07])')
+                    rb"(?=\x00[\x00-\x7f][\s\S]{2}[" + re.escape(first) + rb"][\x01-\x07])"
+                )
             else:
-                first = bytes(sorted({(ref << 5) | t
-                                      for ref in range(4) for t in max_sizes}))
+                first = bytes(sorted({(ref << 5) | t for ref in range(4) for t in max_sizes}))
                 candidate_re = re.compile(
-                    rb'(?=\x00[\x00-\x7f][\s\S]{2}[' + re.escape(first) + rb'])')
+                    rb"(?=\x00[\x00-\x7f][\s\S]{2}[" + re.escape(first) + rb"])"
+                )
 
         def next_chain(start):
             if candidate_re is not None:
@@ -380,17 +411,16 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
         # it (same PPS, picture start if pictures are single-slice, clean
         # payload) when the next two frames follow the same way: random
         # data rarely passes several times in a row.
-        profile = {'pps_ids': set(), 'multi_slice': False}
+        profile = {"pps_ids": set(), "multi_slice": False}
         GAP = 256 * 1024
 
         def learn(pos, nal_len):
             hdr_pos = pos + nal_length_size
-            nal_type = ((m[hdr_pos] >> 1) & 0x3F if codec == 'hevc'
-                        else m[hdr_pos] & 0x1F)
+            nal_type = (m[hdr_pos] >> 1) & 0x3F if codec == "hevc" else m[hdr_pos] & 0x1F
             if nal_type not in slice_types:
                 return
-            head = m[hdr_pos:hdr_pos + 16]
-            if codec == 'hevc':
+            head = m[hdr_pos : hdr_pos + 16]
+            if codec == "hevc":
                 first = head[2] & 0x80
                 pps_id, _ = _read_ue(head, 17 + (1 if 16 <= nal_type <= 23 else 0))
             else:
@@ -398,21 +428,20 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                 _, bit = _read_ue(head, bit)
                 pps_id, _ = _read_ue(head, bit)
                 first = first_mb == 0
-            profile['pps_ids'].add(pps_id)
+            profile["pps_ids"].add(pps_id)
             if not first:
-                profile['multi_slice'] = True
+                profile["multi_slice"] = True
 
         def lone_slice(pos):
             nal_len = nal_length(pos)
             if nal_len is None:
                 return None
             hdr_pos = pos + nal_length_size
-            nal_type = ((m[hdr_pos] >> 1) & 0x3F if codec == 'hevc'
-                        else m[hdr_pos] & 0x1F)
+            nal_type = (m[hdr_pos] >> 1) & 0x3F if codec == "hevc" else m[hdr_pos] & 0x1F
             if nal_type not in slice_types:
                 return None
-            head = m[hdr_pos:hdr_pos + 16]
-            if codec == 'hevc':
+            head = m[hdr_pos : hdr_pos + 16]
+            if codec == "hevc":
                 first = head[2] & 0x80
                 pps_id, _ = _read_ue(head, 17 + (1 if 16 <= nal_type <= 23 else 0))
             else:
@@ -420,16 +449,16 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                 _, bit = _read_ue(head, bit)
                 pps_id, _ = _read_ue(head, bit)
                 first = first_mb == 0
-            if pps_id not in profile['pps_ids']:
+            if pps_id not in profile["pps_ids"]:
                 return None
-            if not first and not profile['multi_slice']:
+            if not first and not profile["multi_slice"]:
                 return None
             if not clean_payload(pos, nal_len):
                 return None
             return nal_len
 
         def next_lone(start, hops=2):
-            if not profile['pps_ids'] or candidate_re is None:
+            if not profile["pps_ids"] or candidate_re is None:
                 return None
             for match in candidate_re.finditer(m, start, min(start + GAP, data_end)):
                 cand = match.start()
@@ -437,13 +466,16 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                 if nal_len is None:
                     continue
                 end = cand + nal_length_size + nal_len
-                if (hops == 0 or end >= data_end - nal_length_size
-                        or nal_length(end) is not None
-                        or next_lone(end, hops - 1) is not None):
+                if (
+                    hops == 0
+                    or end >= data_end - nal_length_size
+                    or nal_length(end) is not None
+                    or next_lone(end, hops - 1) is not None
+                ):
                     return cand
             return None
 
-        idr_types = (19, 20) if codec == 'hevc' else (5,)
+        idr_types = (19, 20) if codec == "hevc" else (5,)
 
         def next_keyframe(start):
             # Last resort when no chain lies ahead: in files with audio after
@@ -461,12 +493,11 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                 if nal_len is None:
                     continue
                 hdr_pos = cand + nal_length_size
-                nal_type = ((m[hdr_pos] >> 1) & 0x3F if codec == 'hevc'
-                            else m[hdr_pos] & 0x1F)
+                nal_type = (m[hdr_pos] >> 1) & 0x3F if codec == "hevc" else m[hdr_pos] & 0x1F
                 if nal_type not in idr_types or not clean_payload(cand, nal_len):
                     continue
-                head = m[hdr_pos:hdr_pos + 16]
-                if codec == 'hevc':
+                head = m[hdr_pos : hdr_pos + 16]
+                if codec == "hevc":
                     first = head[2] & 0x80
                     pps_id, _ = _read_ue(head, 18)
                 else:
@@ -476,18 +507,18 @@ def _scan_mdat_for_nals(filepath, mdat_offset, mdat_size,
                     first = first_mb == 0
                 if not first or pps_id is None:
                     continue
-                known = set(profile['pps_ids'])
+                known = set(profile["pps_ids"])
                 if known and pps_id not in known:
                     continue
-                profile['pps_ids'].add(pps_id)
+                profile["pps_ids"].add(pps_id)
                 if next_lone(cand + nal_length_size + nal_len, hops=2) is not None:
                     return cand
-                profile['pps_ids'] = known
+                profile["pps_ids"] = known
             return None
 
         nal_entries = []
         pos = next_chain(data_start)
-        trusted = True                 # pos came from a full chain
+        trusted = True  # pos came from a full chain
         if pos is None:
             pos, trusted = next_keyframe(data_start), False
         while pos is not None and pos < data_end - nal_length_size:
@@ -517,29 +548,32 @@ def _find_param_nal(block, start, end, nal_type, codec):
 
     Returns (nal_bytes, end_offset) or None.
     """
-    if codec == 'hevc':
-        pattern = rb'\x00\x00([\x00-\x03][\s\S])(' + re.escape(bytes([nal_type << 1])) + rb')\x01'
+    if codec == "hevc":
+        pattern = rb"\x00\x00([\x00-\x03][\s\S])(" + re.escape(bytes([nal_type << 1])) + rb")\x01"
     else:
-        pattern = rb'\x00\x00([\x00-\x03][\s\S])([' + re.escape(
-            bytes([(ref << 5) | nal_type for ref in (1, 2, 3)])) + rb'])'
+        pattern = (
+            rb"\x00\x00([\x00-\x03][\s\S])(["
+            + re.escape(bytes([(ref << 5) | nal_type for ref in (1, 2, 3)]))
+            + rb"])"
+        )
     for match in re.compile(pattern).finditer(block, start, end):
-        length = int.from_bytes(match.group(1), 'big')
+        length = int.from_bytes(match.group(1), "big")
         nal_start = match.start() + 4
-        nal = block[nal_start:nal_start + length]
+        nal = block[nal_start : nal_start + length]
         if not 2 <= length <= 1024 or len(nal) < length:
             continue
         # H.264 SPS starts with a known profile_idc
-        if codec != 'hevc' and nal_type == 7 and nal[1] not in (66, 77, 88, 100, 110, 122, 244):
+        if codec != "hevc" and nal_type == 7 and nal[1] not in (66, 77, 88, 100, 110, 122, 244):
             continue
         # Same rule as _write_annex_b_stream: real NALs never contain these
-        body = nal.rstrip(b'\x00')
-        if b'\x00\x00\x00' in body or b'\x00\x00\x01' in body or b'\x00\x00\x02' in body:
+        body = nal.rstrip(b"\x00")
+        if b"\x00\x00\x00" in body or b"\x00\x00\x01" in body or b"\x00\x00\x02" in body:
             continue
         return nal, nal_start + length
     return None
 
 
-def _find_inband_params(filepath, mdat_offset, nal_entries, codec='h264'):
+def _find_inband_params(filepath, mdat_offset, nal_entries, codec="h264"):
     """Parameter sets the damaged file carries itself, as (vps_list, sps_list, pps_list).
 
     Looks in the scanned NALs (cameras that repeat SPS/PPS in the stream) and
@@ -548,19 +582,19 @@ def _find_inband_params(filepath, mdat_offset, nal_entries, codec='h264'):
     None when no SPS and PPS are found. These match the recording exactly,
     unlike a donor's, so a file can be recovered even without a donor.
     """
-    if codec == 'hevc':
-        kinds = {32: 'vps', 33: 'sps', 34: 'pps'}
+    if codec == "hevc":
+        kinds = {32: "vps", 33: "sps", 34: "pps"}
         get_type = lambda b: (b >> 1) & 0x3F
     else:
-        kinds = {7: 'sps', 8: 'pps'}
+        kinds = {7: "sps", 8: "pps"}
         get_type = lambda b: b & 0x1F
-    found = {'vps': [], 'sps': [], 'pps': []}
+    found = {"vps": [], "sps": [], "pps": []}
 
     def add(kind, nal):
         if nal not in found[kind] and len(found[kind]) < 4:
             found[kind].append(nal)
 
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         for offset, length in nal_entries:
             f.seek(offset)
             head = f.read(1)
@@ -568,16 +602,16 @@ def _find_inband_params(filepath, mdat_offset, nal_entries, codec='h264'):
                 f.seek(offset)
                 add(kinds[get_type(head[0])], f.read(length))
 
-        if not found['sps'] or not found['pps']:
+        if not found["sps"] or not found["pps"]:
             f.seek(mdat_offset)
             block = f.read(1 << 20)
             # Search in the order cameras write them (VPS, SPS, PPS), each
             # within 1 KB of the previous: a lone match elsewhere in 1 MB of
             # header and compressed data is usually a chance byte pattern
-            if codec == 'hevc':
-                order = [('vps', 32), ('sps', 33), ('pps', 34)]
+            if codec == "hevc":
+                order = [("vps", 32), ("sps", 33), ("pps", 34)]
             else:
-                order = [('sps', 7), ('pps', 8)]
+                order = [("sps", 7), ("pps", 8)]
             header_set = {}
             pos, limit = 0, len(block)
             for kind, nal_type in order:
@@ -592,13 +626,12 @@ def _find_inband_params(filepath, mdat_offset, nal_entries, codec='h264'):
                     if not found[kind]:
                         found[kind] = [nal]
 
-    if not found['sps'] or not found['pps'] or (codec == 'hevc' and not found['vps']):
+    if not found["sps"] or not found["pps"] or (codec == "hevc" and not found["vps"]):
         return None
-    return found['vps'], found['sps'], found['pps']
+    return found["vps"], found["sps"], found["pps"]
 
 
-def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
-                          return_score=False):
+def _probe_sps_candidates(filepath, nal_entries, candidates, codec="h264", return_score=False):
     """Try each (vps_list, sps_list, pps_list) candidate against the NAL data.
 
     Writes a short test stream (first IDR + a few frames) with each
@@ -615,19 +648,19 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
     if len(candidates) == 1 and not return_score:
         return candidates[0]
 
-    idr_types = {19, 20} if codec == 'hevc' else {5}
-    ffmpeg_fmt = 'hevc' if codec == 'hevc' else 'h264'
+    idr_types = {19, 20} if codec == "hevc" else {5}
+    ffmpeg_fmt = "hevc" if codec == "hevc" else "h264"
 
     # Find first IDR and collect a short segment (IDR + up to 10 frames)
     test_nals = []
     found_idr = False
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         for offset, length in nal_entries:
             f.seek(offset)
             b = f.read(1)
             if not b:
                 continue
-            if codec == 'hevc':
+            if codec == "hevc":
                 nal_type = (b[0] >> 1) & 0x3F
             else:
                 nal_type = b[0] & 0x1F
@@ -643,11 +676,11 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
     # Frames in the test stream: slices that start a picture
     # (first_mb_in_slice / first_slice_segment_in_pic_flag)
     expected_frames = 0
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         for offset, length in test_nals:
             f.seek(offset)
             head = f.read(3)
-            if codec == 'hevc':
+            if codec == "hevc":
                 if len(head) == 3 and ((head[0] >> 1) & 0x3F) < 32 and head[2] & 0x80:
                     expected_frames += 1
             elif len(head) >= 2 and 1 <= (head[0] & 0x1F) <= 5 and head[1] & 0x80:
@@ -656,14 +689,13 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
     if not test_nals:
         return (candidates[0], None) if return_score else candidates[0]
 
-    START_CODE = b'\x00\x00\x00\x01'
+    START_CODE = b"\x00\x00\x00\x01"
     best = candidates[0]
-    best_errors = float('inf')
+    best_errors = float("inf")
 
     for vps_list, sps_list, pps_list in candidates:
         try:
-            with tempfile.NamedTemporaryFile(suffix='.' + ffmpeg_fmt,
-                                             delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix="." + ffmpeg_fmt, delete=False) as tmp:
                 tmp_path = tmp.name
                 for vps in vps_list:
                     tmp.write(START_CODE + vps)
@@ -671,7 +703,7 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
                     tmp.write(START_CODE + sps)
                 for pps in pps_list:
                     tmp.write(START_CODE + pps)
-                with open(filepath, 'rb') as src:
+                with open(filepath, "rb") as src:
                     for nal_off, nal_len in test_nals:
                         tmp.write(START_CODE)
                         src.seek(nal_off)
@@ -683,8 +715,7 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
                             tmp.write(chunk)
                             remaining -= len(chunk)
 
-            problems, frames = _decode_stats(
-                ['-f', ffmpeg_fmt, '-i', tmp_path], timeout=10)
+            problems, frames = _decode_stats(["-f", ffmpeg_fmt, "-i", tmp_path], timeout=10)
             err_count = problems + max(0, expected_frames - frames)
 
             if err_count < best_errors:
@@ -701,7 +732,7 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec='h264',
                 pass
 
     if return_score:
-        return best, (best_errors if best_errors != float('inf') else None)
+        return best, (best_errors if best_errors != float("inf") else None)
     return best
 
 
@@ -717,14 +748,29 @@ def _decoding_signature(sps_list, pps_list):
     pps = _parse_h264_pps(pps_list[0])
     if not order or not pps:
         return None
-    return (order['log2_max_frame_num'], order['poc_type'],
-            order['log2_max_poc_lsb'], order['width'], order['height'],
-            order['scaling'], pps['entropy'], pps['init_qp'], pps['transform_8x8'])
+    return (
+        order["log2_max_frame_num"],
+        order["poc_type"],
+        order["log2_max_poc_lsb"],
+        order["width"],
+        order["height"],
+        order["scaling"],
+        pps["entropy"],
+        pps["init_qp"],
+        pps["transform_8x8"],
+    )
 
 
-def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
-                          output_path, vps_list=None, codec='h264',
-                          pictures=None):
+def _write_annex_b_stream(
+    filepath,
+    nal_entries,
+    sps_list,
+    pps_list,
+    output_path,
+    vps_list=None,
+    codec="h264",
+    pictures=None,
+):
     """Write NAL units as an Annex-B stream (.h264 or .hevc).
 
     Skips NALs before the first IDR keyframe (P/B-frames without a reference
@@ -738,12 +784,12 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
     poc_lsb, max_poc_lsb) for _apply_presentation_order; poc_lsb is None
     when the order can't be read.
     """
-    START_CODE = b'\x00\x00\x00\x01'
+    START_CODE = b"\x00\x00\x00\x01"
     count = 0
     if vps_list is None:
         vps_list = []
 
-    if codec == 'hevc':
+    if codec == "hevc":
         idr_types = {19, 20}
         slice_types = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         vcl_limit, aud_type = 32, 35
@@ -753,7 +799,7 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
         vcl_limit, aud_type = 6, 9
 
     def _get_nal_type(b):
-        if codec == 'hevc':
+        if codec == "hevc":
             return (b >> 1) & 0x3F
         return b & 0x1F
 
@@ -770,7 +816,7 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
 
     # Find first IDR keyframe — skip orphaned P/B-frames before it
     first_idr = 0
-    with open(filepath, 'rb') as f:
+    with open(filepath, "rb") as f:
         for i, (offset, length) in enumerate(nal_entries):
             f.seek(offset)
             b = f.read(1)
@@ -778,7 +824,7 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
                 first_idr = i
                 break
 
-    with open(output_path, 'wb') as out, open(filepath, 'rb') as src:
+    with open(output_path, "wb") as out, open(filepath, "rb") as src:
         _write_params(out)
 
         need_keyframe = False
@@ -786,26 +832,27 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
         # Parameter sets by id, for reading frame_num and picture order from
         # slice headers
         sps_by_id, pps_by_id = {}, {}
-        if codec != 'hevc':
+        if codec != "hevc":
             for sps in sps_list:
                 info = _parse_h264_sps_order(sps)
                 if info:
-                    sps_by_id[info['sps_id']] = info
+                    sps_by_id[info["sps_id"]] = info
             for pps in pps_list:
                 ids = _parse_h264_pps_ids(pps)
                 if ids:
                     pps_by_id[ids[0]] = ids[1]
+
         # frame_num continuity: each picture's frame_num is one more than the
         # last reference picture's (IDR: 0). Checked only if the stream's
         # first pictures follow that rule, in case a camera's headers read
         # differently than expected.
         def picture_frame_num(data):
-            if codec == 'hevc' or not (len(data) > 1 and data[1] & 0x80):
+            if codec == "hevc" or not (len(data) > 1 and data[1] & 0x80):
                 return None
             return _h264_slice_frame_num(data, sps_by_id, pps_by_id)
 
         check_frame_num = False
-        picture_fn = None      # frame_num of the picture being written
+        picture_fn = None  # frame_num of the picture being written
         if sps_by_id:
             prev_ref, follows, total = None, 0, 0
             for nal_offset, nal_len in nal_entries[first_idr:]:
@@ -852,10 +899,13 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
             # or, in carved files, when a frame runs into another file's data.
             # Trailing zeros are padding (constant-bitrate cameras pad every
             # frame), not damage, so both checks ignore them
-            body = data.rstrip(b'\x00')
-            if (b'\x00\x00\x01' in body or b'\x00\x00\x02' in body
-                    or b'\x00\x00\x00' in body
-                    or (nal_len > 64 and b'\x00' * 16 in body)):
+            body = data.rstrip(b"\x00")
+            if (
+                b"\x00\x00\x01" in body
+                or b"\x00\x00\x02" in body
+                or b"\x00\x00\x00" in body
+                or (nal_len > 64 and b"\x00" * 16 in body)
+            ):
                 if nal_type < vcl_limit:
                     need_keyframe = True
                     pending = []
@@ -869,7 +919,7 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
             # Cameras may split a picture into several slices (iPhone 5:
             # two per frame); only the first starts a new picture
             # (first_mb_in_slice == 0 / first_slice_segment_in_pic_flag)
-            if codec == 'hevc':
+            if codec == "hevc":
                 first_in_pic = len(data) > 2 and bool(data[2] & 0x80)
             else:
                 first_in_pic = len(data) > 1 and bool(data[1] & 0x80)
@@ -882,7 +932,7 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
                         prev_ref = fn[0]
                     elif not need_keyframe:
                         if prev_ref is not None and fn[0] != (prev_ref + 1) % fn[1]:
-                            need_keyframe = True   # references were lost
+                            need_keyframe = True  # references were lost
                         elif data[0] & 0x60:
                             prev_ref = fn[0]
             elif check_frame_num and not first_in_pic:
@@ -890,15 +940,16 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
                 # doesn't (or a few bytes too short to hold a slice header)
                 # is other data that happened to look like a slice
                 fn = _h264_slice_frame_num(data, sps_by_id, pps_by_id)
-                if nal_len < 4 or (fn is not None and picture_fn is not None
-                                   and fn[0] != picture_fn):
+                if nal_len < 4 or (
+                    fn is not None and picture_fn is not None and fn[0] != picture_fn
+                ):
                     continue
 
             if need_keyframe:
                 # HEVC CRA/BLA frames are random access points too
-                if (nal_type not in idr_types and not (
-                        codec == 'hevc' and 16 <= nal_type <= 21)) \
-                        or not first_in_pic:
+                if (
+                    nal_type not in idr_types and not (codec == "hevc" and 16 <= nal_type <= 21)
+                ) or not first_in_pic:
                     pending = []
                     continue
                 need_keyframe = False
@@ -925,10 +976,11 @@ def _write_annex_b_stream(filepath, nal_entries, sps_list, pps_list,
             out.write(data)
             count += 1
 
-            if pictures is not None and codec != 'hevc' and first_in_pic:
+            if pictures is not None and codec != "hevc" and first_in_pic:
                 order = _h264_slice_poc_lsb(data, sps_by_id, pps_by_id)
-                pictures.append((nal_type in idr_types, bool(data[0] & 0x60))
-                                + (order or (None, None)))
+                pictures.append(
+                    (nal_type in idr_types, bool(data[0] & 0x60)) + (order or (None, None))
+                )
 
     return count
 
@@ -954,8 +1006,7 @@ class _BitWriter:
         """The NAL bytes: stop bit, byte alignment, emulation prevention."""
         bits = self.bits + [1]
         bits += [0] * (-len(bits) % 8)
-        raw = bytes(int(''.join(map(str, bits[i:i + 8])), 2)
-                    for i in range(0, len(bits), 8))
+        raw = bytes(int("".join(map(str, bits[i : i + 8])), 2) for i in range(0, len(bits), 8))
         out, zeros = bytearray(), 0
         for b in raw:
             if zeros >= 2 and b <= 3:
@@ -976,40 +1027,40 @@ def _build_h264_sps(p):
     references explicitly (x264's B-pyramid), where kept references then
     outlive frame_num wrapping.
     """
-    mbw, mbh = (p['width'] + 15) // 16, (p['height'] + 15) // 16
+    mbw, mbh = (p["width"] + 15) // 16, (p["height"] + 15) // 16
     w = _BitWriter()
     w.u(8, 0x67)
     w.u(8, 100)
     w.u(8, 0)
     w.u(8, 51)
-    w.ue(0)                                    # sps_id
-    w.ue(1)                                    # chroma_format_idc 4:2:0
+    w.ue(0)  # sps_id
+    w.ue(1)  # chroma_format_idc 4:2:0
     w.ue(0)
-    w.ue(0)                                    # 8-bit luma and chroma
+    w.ue(0)  # 8-bit luma and chroma
     w.u(1, 0)
     # Scaling matrices: flat (iPhone, GoPro, x264) or the spec's defaults,
     # declared without sending any lists (Nikon, Fujifilm)
-    w.u(1, 1 if p.get('default_scaling') else 0)
-    if p.get('default_scaling'):
+    w.u(1, 1 if p.get("default_scaling") else 0)
+    if p.get("default_scaling"):
         w.u(8, 0)
-    w.ue(p['log2_max_frame_num'] - 4)
-    w.ue(p['poc_type'])
-    if p['poc_type'] == 0:
-        w.ue(p['log2_max_poc_lsb'] - 4)
-    w.ue(p.get('num_ref_frames') or max(1, min(16, 184320 // (mbw * mbh))))
-    w.u(1, 0)                                  # gaps_in_frame_num
+    w.ue(p["log2_max_frame_num"] - 4)
+    w.ue(p["poc_type"])
+    if p["poc_type"] == 0:
+        w.ue(p["log2_max_poc_lsb"] - 4)
+    w.ue(p.get("num_ref_frames") or max(1, min(16, 184320 // (mbw * mbh))))
+    w.u(1, 0)  # gaps_in_frame_num
     w.ue(mbw - 1)
     w.ue(mbh - 1)
-    w.u(1, 1)                                  # frame_mbs_only
-    w.u(1, p.get('direct_8x8', 1))
-    crop_r, crop_b = (mbw * 16 - p['width']) // 2, (mbh * 16 - p['height']) // 2
+    w.u(1, 1)  # frame_mbs_only
+    w.u(1, p.get("direct_8x8", 1))
+    crop_r, crop_b = (mbw * 16 - p["width"]) // 2, (mbh * 16 - p["height"]) // 2
     w.u(1, 1 if crop_r or crop_b else 0)
     if crop_r or crop_b:
         w.ue(0)
         w.ue(crop_r)
         w.ue(0)
         w.ue(crop_b)
-    w.u(1, 0)                                  # no VUI
+    w.u(1, 0)  # no VUI
     return w.nal()
 
 
@@ -1017,24 +1068,24 @@ def _build_h264_pps(p):
     """PPS NAL for inferred settings (High profile syntax)."""
     w = _BitWriter()
     w.u(8, 0x68)
-    w.ue(p.get('pps_id', 0))
+    w.ue(p.get("pps_id", 0))
     w.ue(0)
-    w.u(1, p['entropy'])
-    w.u(1, 0)                                  # bottom_field_pic_order
-    w.ue(0)                                    # one slice group
-    w.ue(p.get('ref_l0', 0))
-    w.ue(p.get('ref_l1', 0))
-    w.u(1, p.get('weighted_pred', 0))
-    w.u(2, p.get('weighted_bipred', 0))
-    w.se(p.get('init_qp', 0))
+    w.u(1, p["entropy"])
+    w.u(1, 0)  # bottom_field_pic_order
+    w.ue(0)  # one slice group
+    w.ue(p.get("ref_l0", 0))
+    w.ue(p.get("ref_l1", 0))
+    w.u(1, p.get("weighted_pred", 0))
+    w.u(2, p.get("weighted_bipred", 0))
+    w.se(p.get("init_qp", 0))
     w.se(0)
-    w.se(p.get('chroma_qp', 0))
-    w.u(1, p['deblock_ctrl'])
-    w.u(1, 0)                                  # constrained_intra_pred
-    w.u(1, 0)                                  # redundant_pic_cnt
-    w.u(1, p.get('transform_8x8', 0))
+    w.se(p.get("chroma_qp", 0))
+    w.u(1, p["deblock_ctrl"])
+    w.u(1, 0)  # constrained_intra_pred
+    w.u(1, 0)  # redundant_pic_cnt
+    w.u(1, p.get("transform_8x8", 0))
     w.u(1, 0)
-    w.se(p.get('chroma_qp', 0))
+    w.se(p.get("chroma_qp", 0))
     return w.nal()
 
 
@@ -1043,27 +1094,38 @@ def _parse_h264_pps(pps):
     d = _rbsp(pps)
     fields = {}
     bit = 8
-    for name, kind in (('pps_id', 'ue'), ('sps_id', 'ue'), ('entropy', 1),
-                       ('bottom_field_poc', 1), ('slice_groups', 'ue'),
-                       ('ref_l0', 'ue'), ('ref_l1', 'ue'), ('weighted_pred', 1),
-                       ('weighted_bipred', 2), ('init_qp', 'se'), ('init_qs', 'se'),
-                       ('chroma_qp', 'se'), ('deblock_ctrl', 1),
-                       ('constrained_intra', 1), ('redundant', 1)):
-        if kind == 'ue':
+    for name, kind in (
+        ("pps_id", "ue"),
+        ("sps_id", "ue"),
+        ("entropy", 1),
+        ("bottom_field_poc", 1),
+        ("slice_groups", "ue"),
+        ("ref_l0", "ue"),
+        ("ref_l1", "ue"),
+        ("weighted_pred", 1),
+        ("weighted_bipred", 2),
+        ("init_qp", "se"),
+        ("init_qs", "se"),
+        ("chroma_qp", "se"),
+        ("deblock_ctrl", 1),
+        ("constrained_intra", 1),
+        ("redundant", 1),
+    ):
+        if kind == "ue":
             value, bit = _read_ue(d, bit)
-        elif kind == 'se':
+        elif kind == "se":
             value, bit = _read_se(d, bit)
         else:
             value, bit = _read_bits(d, bit, kind)
         if value is None:
             return None
         fields[name] = value
-    if fields['slice_groups']:
+    if fields["slice_groups"]:
         return None
-    fields['transform_8x8'] = 0
+    fields["transform_8x8"] = 0
     rest = len(d) * 8 - bit
     if rest > 8 or (rest > 0 and d[-1] & ((1 << rest) - 1) != 1 << (rest - 1)):
-        fields['transform_8x8'], bit = _read_bits(d, bit, 1)
+        fields["transform_8x8"], bit = _read_bits(d, bit, 1)
     return fields
 
 
@@ -1101,9 +1163,11 @@ def _display_ranks(pictures):
             # the wraps, or the run came from data whose slice headers
             # don't fit these parameter sets), so keep decode order.
             run = pocs[start:i]
-            if (any(abs(pos - (k - start)) > 16 for pos, k in enumerate(order))
-                    or (pictures[start][0] and pictures[start][2] != 0)
-                    or len(set(run)) != len(run)):
+            if (
+                any(abs(pos - (k - start)) > 16 for pos, k in enumerate(order))
+                or (pictures[start][0] and pictures[start][2] != 0)
+                or len(set(run)) != len(run)
+            ):
                 # Also distrust runs that don't look like a real sequence:
                 # an IDR's count starts at 0 and counts never repeat
                 order = list(range(start, i))
@@ -1127,47 +1191,60 @@ def _apply_presentation_order(mp4_path, pictures):
     if not ranks or ranks == list(range(len(ranks))):
         return False
     stem, ext = os.path.splitext(mp4_path)
-    tmp_path = stem + '.order' + ext
+    tmp_path = stem + ".order" + ext
     try:
         # Remux with the moov last, so growing it doesn't move the media data
-        r = subprocess.run([_ffmpeg_path, '-y', '-v', 'error', '-i', mp4_path,
-                            '-map', '0', '-c', 'copy', tmp_path],
-                           capture_output=True, timeout=600)
+        r = subprocess.run(
+            [
+                _ffmpeg_path,
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                mp4_path,
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                tmp_path,
+            ],
+            capture_output=True,
+            timeout=600,
+        )
         if r.returncode != 0:
             return False
         top = parse_boxes(tmp_path)
-        if not top or top[-1][0] != 'moov':
+        if not top or top[-1][0] != "moov":
             return False
         _, moov_off, moov_size = top[-1]
-        with open(tmp_path, 'rb') as f:
+        with open(tmp_path, "rb") as f:
             f.seek(moov_off)
             moov = bytearray(f.read(moov_size))
 
         def children(start, end):
             pos = start
             while pos + 8 <= end:
-                size = struct.unpack_from('>I', moov, pos)[0]
+                size = struct.unpack_from(">I", moov, pos)[0]
                 if size < 8 or pos + size > end:
                     return
-                yield moov[pos + 4:pos + 8].decode('latin1'), pos, size
+                yield moov[pos + 4 : pos + 8].decode("latin1"), pos, size
                 pos += size
 
         def child(start, end, name):
-            return next(((p, sz) for t, p, sz in children(start, end) if t == name),
-                        (None, None))
+            return next(((p, sz) for t, p, sz in children(start, end) if t == name), (None, None))
 
         target = None
         for t, trak, trak_size in children(8, len(moov)):
-            if t != 'trak':
+            if t != "trak":
                 continue
-            mdia, mdia_size = child(trak + 8, trak + trak_size, 'mdia')
+            mdia, mdia_size = child(trak + 8, trak + trak_size, "mdia")
             if mdia is None:
                 continue
-            hdlr, _ = child(mdia + 8, mdia + mdia_size, 'hdlr')
-            if hdlr is None or moov[hdlr + 16:hdlr + 20] != b'vide':
+            hdlr, _ = child(mdia + 8, mdia + mdia_size, "hdlr")
+            if hdlr is None or moov[hdlr + 16 : hdlr + 20] != b"vide":
                 continue
-            minf, minf_size = child(mdia + 8, mdia + mdia_size, 'minf')
-            stbl, stbl_size = child(minf + 8, minf + minf_size, 'stbl') if minf else (None, None)
+            minf, minf_size = child(mdia + 8, mdia + mdia_size, "minf")
+            stbl, stbl_size = child(minf + 8, minf + minf_size, "stbl") if minf else (None, None)
             if stbl is None:
                 continue
             target = (trak, mdia, minf, stbl, stbl_size)
@@ -1175,14 +1252,16 @@ def _apply_presentation_order(mp4_path, pictures):
         if target is None:
             return False
         trak, mdia, minf, stbl, stbl_size = target
-        stts, stts_size = child(stbl + 8, stbl + stbl_size, 'stts')
-        stsz, _ = child(stbl + 8, stbl + stbl_size, 'stsz')
-        if stts is None or stsz is None or child(stbl + 8, stbl + stbl_size, 'ctts')[0]:
+        stts, stts_size = child(stbl + 8, stbl + stbl_size, "stts")
+        stsz, _ = child(stbl + 8, stbl + stbl_size, "stsz")
+        if stts is None or stsz is None or child(stbl + 8, stbl + stbl_size, "ctts")[0]:
             return False
-        if struct.unpack_from('>I', moov, stsz + 16)[0] != len(ranks):
-            return False                       # frames don't line up
-        deltas = {struct.unpack_from('>I', moov, stts + 16 + 8 * i + 4)[0]
-                  for i in range(struct.unpack_from('>I', moov, stts + 12)[0])}
+        if struct.unpack_from(">I", moov, stsz + 16)[0] != len(ranks):
+            return False  # frames don't line up
+        deltas = {
+            struct.unpack_from(">I", moov, stts + 16 + 8 * i + 4)[0]
+            for i in range(struct.unpack_from(">I", moov, stts + 12)[0])
+        }
         if len(deltas) != 1:
             return False
         delta = deltas.pop()
@@ -1197,28 +1276,46 @@ def _apply_presentation_order(mp4_path, pictures):
                 runs[-1][0] += 1
             else:
                 runs.append([1, offset])
-        ctts = struct.pack('>II', 16 + 8 * len(runs), 0x63747473) + struct.pack(
-            '>II', 0, len(runs)) + b''.join(struct.pack('>II', n, o) for n, o in runs)
+        ctts = (
+            struct.pack(">II", 16 + 8 * len(runs), 0x63747473)
+            + struct.pack(">II", 0, len(runs))
+            + b"".join(struct.pack(">II", n, o) for n, o in runs)
+        )
 
         insert_at = stts + stts_size
         moov[insert_at:insert_at] = ctts
         for box in (0, trak, mdia, minf, stbl):
-            struct.pack_into('>I', moov, box,
-                             struct.unpack_from('>I', moov, box)[0] + len(ctts))
-        with open(tmp_path, 'r+b') as f:
+            struct.pack_into(">I", moov, box, struct.unpack_from(">I", moov, box)[0] + len(ctts))
+        with open(tmp_path, "r+b") as f:
             f.truncate(moov_off)
             f.seek(moov_off)
             f.write(moov)
 
-        ordered_path = stem + '.ordered' + ext
-        r = subprocess.run([_ffmpeg_path, '-y', '-v', 'error', '-i', tmp_path,
-                            '-map', '0', '-c', 'copy', '-movflags', '+faststart',
-                            ordered_path], capture_output=True, timeout=600)
+        ordered_path = stem + ".ordered" + ext
+        r = subprocess.run(
+            [
+                _ffmpeg_path,
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                tmp_path,
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                ordered_path,
+            ],
+            capture_output=True,
+            timeout=600,
+        )
         if r.returncode != 0:
             return False
         os.replace(ordered_path, mp4_path)
         return True
     finally:
-        for path in (tmp_path, stem + '.ordered' + ext):
+        for path in (tmp_path, stem + ".ordered" + ext):
             if os.path.exists(path):
                 os.unlink(path)

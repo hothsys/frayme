@@ -18,21 +18,26 @@ def _decode_stats(input_args, timeout, count_errors=True):
     file that decodes nothing has no errors.
     """
     result = subprocess.run(
-        [_ffmpeg_path, '-hide_banner', '-loglevel', 'level+info']
-        + input_args + ['-f', 'null', '-'],
-        capture_output=True, timeout=timeout)
-    lines = result.stderr.decode(errors='replace').splitlines()
+        [_ffmpeg_path, "-hide_banner", "-loglevel", "level+info"]
+        + input_args
+        + ["-f", "null", "-"],
+        capture_output=True,
+        timeout=timeout,
+    )
+    lines = result.stderr.decode(errors="replace").splitlines()
     # Decoder messages carry a context prefix ("[h264 @ 0x...] [error] ..."),
     # so the level tag can't be matched at the start of the line.
     # count_errors=False counts only concealment (damaged picture data): a
     # healthy stream that starts between keyframes, such as a TS recording
     # joined mid-broadcast, logs errors until its first keyframe.
-    problems = sum(1 for line in lines
-                   if 'concealing' in line
-                   or (count_errors and ('[error]' in line or '[fatal]' in line)))
+    problems = sum(
+        1
+        for line in lines
+        if "concealing" in line or (count_errors and ("[error]" in line or "[fatal]" in line))
+    )
     frames = 0
     for line in lines:
-        match = re.search(r'frame=\s*(\d+)', line)
+        match = re.search(r"frame=\s*(\d+)", line)
         if match:
             frames = int(match.group(1))
     return problems, frames
@@ -48,20 +53,34 @@ def _check_decodes_cleanly(path, timeout=600, stats=None):
     mismatched SPS left nearly every frame undecodable (a blank video).
     """
     pk = subprocess.run(
-        [_ffprobe_path, '-v', 'quiet', '-select_streams', 'v:0',
-         '-count_packets', '-show_entries', 'stream=nb_read_packets',
-         '-of', 'csv=p=0', path],
-        capture_output=True, timeout=timeout)
-    digits = ''.join(ch for ch in pk.stdout.decode() if ch.isdigit())
+        [
+            _ffprobe_path,
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v:0",
+            "-count_packets",
+            "-show_entries",
+            "stream=nb_read_packets",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
+        capture_output=True,
+        timeout=timeout,
+    )
+    digits = "".join(ch for ch in pk.stdout.decode() if ch.isdigit())
     packets = int(digits) if digits else 0
-    problems, frames = _decode_stats(['-i', path], timeout)
+    problems, frames = _decode_stats(["-i", path], timeout)
     if stats is not None:
         stats.update(packets=packets, frames=frames, problems=problems)
     if packets == 0:
-        return False, 'no video frames'
+        return False, "no video frames"
     if frames < packets * 0.8:
-        return False, (f'only {frames} of {packets} frames decode'
-                       + (f', {problems} decode errors' if problems else ''))
+        return False, (
+            f"only {frames} of {packets} frames decode"
+            + (f", {problems} decode errors" if problems else "")
+        )
     if problems > packets * 0.1 + 2:
-        return False, f'{problems} decode errors in {packets} frames'
-    return True, f'{frames} frames decode'
+        return False, f"{problems} decode errors in {packets} frames"
+    return True, f"{frames} frames decode"

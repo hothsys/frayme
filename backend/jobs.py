@@ -35,8 +35,8 @@ _running_outputs = set()
 
 
 def _output_key(job):
-    stem = os.path.splitext(os.path.basename(job['filepath']))[0]
-    return (job['output_dir'].lower(), stem.lower())
+    stem = os.path.splitext(os.path.basename(job["filepath"]))[0]
+    return (job["output_dir"].lower(), stem.lower())
 
 
 def _next_job():
@@ -44,14 +44,15 @@ def _next_job():
     Blocks until there is one. Call without the lock held."""
     with _recover_wakeup:
         while True:
-            for job_id in sorted((j for j, job in _recover_jobs.items()
-                                  if job['status'] == 'queued'), key=int):
+            for job_id in sorted(
+                (j for j, job in _recover_jobs.items() if job["status"] == "queued"), key=int
+            ):
                 job = _recover_jobs[job_id]
                 key = _output_key(job)
                 if key not in _running_outputs:
                     _running_outputs.add(key)
-                    job['status'] = 'recovering'
-                    job['started_at'] = time.time()
+                    job["status"] = "recovering"
+                    job["started_at"] = time.time()
                     return job
             _recover_wakeup.wait()
 
@@ -63,21 +64,24 @@ def _recovery_worker():
         update = {}
         try:
             result = _execute_recovery(
-                job['filepath'], job.get('donor', ''), job.get('output_dir', ''),
-                job.get('rotation'))
-            update = {'status': 'done', 'result': result}
+                job["filepath"],
+                job.get("donor", ""),
+                job.get("output_dir", ""),
+                job.get("rotation"),
+            )
+            update = {"status": "done", "result": result}
         except Exception as e:
             hints = None
-            if os.path.splitext(job['filepath'])[1].lower() in VIDEO_EXTS - {'.avi'}:
+            if os.path.splitext(job["filepath"])[1].lower() in VIDEO_EXTS - {".avi"}:
                 try:
-                    hints = _source_hints(job['filepath'])
+                    hints = _source_hints(job["filepath"])
                 except Exception:
                     pass
-            update = {'status': 'failed', 'error': str(e), 'hints': hints}
+            update = {"status": "failed", "error": str(e), "hints": hints}
         finally:
             with _recover_wakeup:
-                job.update(update or {'status': 'failed', 'error': 'Recovery stopped'})
-                job['finished_at'] = time.time()
+                job.update(update or {"status": "failed", "error": "Recovery stopped"})
+                job["finished_at"] = time.time()
                 _running_outputs.discard(_output_key(job))
                 _recover_wakeup.notify_all()
 
@@ -87,54 +91,55 @@ def _ensure_recovery_workers():
     processes (trial decodes use half the cores), so the pool stays small."""
     with _recover_lock:
         while len(_recover_workers) < RECOVERY_WORKERS:
-            t = threading.Thread(target=_recovery_worker, daemon=True,
-                                 name=f'recovery-{len(_recover_workers) + 1}')
+            t = threading.Thread(
+                target=_recovery_worker, daemon=True, name=f"recovery-{len(_recover_workers) + 1}"
+            )
             _recover_workers.append(t)
             t.start()
 
 
-def enqueue_job(filepath, donor='', output_dir='', rotation=None):
+def enqueue_job(filepath, donor="", output_dir="", rotation=None):
     """Add a recovery to the queue. Returns (status_code, payload)."""
     global _recover_counter
     if not filepath or not os.path.exists(filepath):
-        return 404, {'error': 'File not found'}
+        return 404, {"error": "File not found"}
     output_dir, error = _check_output_dir(output_dir)
     if error:
-        return 400, {'ok': False, 'error': error, 'error_kind': 'output_dir'}
+        return 400, {"ok": False, "error": error, "error_kind": "output_dir"}
     if rotation is not None and rotation not in _ROTATIONS:
-        return 400, {'ok': False, 'error': 'Invalid rotation'}
+        return 400, {"ok": False, "error": "Invalid rotation"}
 
     with _recover_lock:
         for j in _recover_jobs.values():
-            if j['filepath'] == filepath and j['status'] in ('queued', 'recovering'):
-                return 200, {'ok': False, 'error': 'Already queued'}
+            if j["filepath"] == filepath and j["status"] in ("queued", "recovering"):
+                return 200, {"ok": False, "error": "Already queued"}
         _recover_counter += 1
         job_id = str(_recover_counter)
         job = {
-            'id': job_id,
-            'filepath': filepath,
-            'filename': os.path.basename(filepath),
-            'donor': donor,
-            'output_dir': output_dir,
-            'rotation': rotation,
-            'status': 'queued',
-            'queued_at': time.time(),
-            'started_at': None,
-            'finished_at': None,
-            'result': None,
-            'error': None,
+            "id": job_id,
+            "filepath": filepath,
+            "filename": os.path.basename(filepath),
+            "donor": donor,
+            "output_dir": output_dir,
+            "rotation": rotation,
+            "status": "queued",
+            "queued_at": time.time(),
+            "started_at": None,
+            "finished_at": None,
+            "result": None,
+            "error": None,
         }
         _recover_jobs[job_id] = job
         _recover_wakeup.notify_all()
 
     _ensure_recovery_workers()
-    return 200, {'ok': True, 'job_id': job_id, 'status': 'queued'}
+    return 200, {"ok": True, "job_id": job_id, "status": "queued"}
 
 
 def list_jobs():
     """All jobs, oldest first."""
     with _recover_lock:
-        return sorted(_recover_jobs.values(), key=lambda j: int(j['id']))
+        return sorted(_recover_jobs.values(), key=lambda j: int(j["id"]))
 
 
 def rotate_output(output, rotation):
@@ -143,21 +148,26 @@ def rotate_output(output, rotation):
     Only files this session's recoveries wrote can be changed.
     """
     if rotation not in _ROTATIONS:
-        return 400, {'error': 'Invalid rotation'}
+        return 400, {"error": "Invalid rotation"}
     with _recover_lock:
-        job = next((j for j in _recover_jobs.values()
-                    if j['status'] == 'done' and j.get('result')
-                    and j['result'].get('output') == output), None)
+        job = next(
+            (
+                j
+                for j in _recover_jobs.values()
+                if j["status"] == "done" and j.get("result") and j["result"].get("output") == output
+            ),
+            None,
+        )
     if not job or not os.path.isfile(output):
-        return 404, {'error': 'Recovered file not found'}
+        return 404, {"error": "Recovered file not found"}
     try:
         _apply_rotation(output, rotation)
     except Exception as e:
-        return 500, {'error': str(e)}
+        return 500, {"error": str(e)}
     with _recover_lock:
-        job['result']['rotation'] = _read_rotation(output)
-        job['result']['size'] = os.path.getsize(output)
-    return 200, {'ok': True, 'rotation': job['result']['rotation']}
+        job["result"]["rotation"] = _read_rotation(output)
+        job["result"]["size"] = os.path.getsize(output)
+    return 200, {"ok": True, "rotation": job["result"]["rotation"]}
 
 
 def cancel_job(job_id):
@@ -167,17 +177,16 @@ def cancel_job(job_id):
     """
     with _recover_lock:
         job = _recover_jobs.get(job_id)
-        if not job or job['status'] != 'queued':
-            return 409, {'ok': False, 'error': 'Only queued jobs can be cancelled'}
+        if not job or job["status"] != "queued":
+            return 409, {"ok": False, "error": "Only queued jobs can be cancelled"}
         del _recover_jobs[job_id]
-    return 200, {'ok': True, 'filepath': job['filepath']}
+    return 200, {"ok": True, "filepath": job["filepath"]}
 
 
 def clear_finished():
     """Remove finished and failed jobs. Returns the number removed."""
     with _recover_lock:
-        done_ids = [jid for jid, j in _recover_jobs.items()
-                    if j['status'] in ('done', 'failed')]
+        done_ids = [jid for jid, j in _recover_jobs.items() if j["status"] in ("done", "failed")]
         for jid in done_ids:
             del _recover_jobs[jid]
     return len(done_ids)
