@@ -3,73 +3,75 @@
 // ── Click handlers ──
 
 // Cancel a queued recovery and put its row's button back to Recover
-document.addEventListener('change', function(e) {
+document.addEventListener("change", function (e) {
   var sel = e.target;
-  if (!sel.classList || !sel.classList.contains('rotation-select')) return;
-  if (sel.hasAttribute('data-rotation-for')) {
-    var path = sel.getAttribute('data-rotation-for');
-    if (sel.value === '') delete rotationChoice[path];
+  if (!sel.classList || !sel.classList.contains("rotation-select")) return;
+  if (sel.hasAttribute("data-rotation-for")) {
+    var path = sel.getAttribute("data-rotation-for");
+    if (sel.value === "") delete rotationChoice[path];
     else rotationChoice[path] = Number(sel.value);
     return;
   }
-  var output = sel.getAttribute('data-rotate-output');
-  var source = sel.getAttribute('data-rotate-for');
+  var output = sel.getAttribute("data-rotate-output");
+  var source = sel.getAttribute("data-rotate-for");
   var previous = String((recoveredFiles[source] || {}).rotation || 0);
   sel.disabled = true;
-  fetch('/api/rotate-output', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  fetch("/api/rotate-output", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ output: output, rotation: Number(sel.value) }),
   })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    sel.disabled = false;
-    if (d.ok) {
-      if (recoveredFiles[source]) recoveredFiles[source].rotation = d.rotation;
-    } else {
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (d) {
+      sel.disabled = false;
+      if (d.ok) {
+        if (recoveredFiles[source]) recoveredFiles[source].rotation = d.rotation;
+      } else {
+        sel.value = previous;
+        alert(d.error || "Could not change the rotation.");
+      }
+    })
+    .catch(function (err) {
+      sel.disabled = false;
       sel.value = previous;
-      alert(d.error || 'Could not change the rotation.');
-    }
-  })
-  .catch(function(err) {
-    sel.disabled = false;
-    sel.value = previous;
-    console.error('Changing rotation failed:', err);
-  });
+      console.error("Changing rotation failed:", err);
+    });
 });
 
-document.addEventListener('click', function(e) {
-  var cancelTarget = e.target.closest('[data-cancel-job]');
+document.addEventListener("click", function (e) {
+  var cancelTarget = e.target.closest("[data-cancel-job]");
   if (cancelTarget) {
     e.preventDefault();
     e.stopPropagation();
-    cancelQueuedJob(cancelTarget.getAttribute('data-cancel-job'));
+    cancelQueuedJob(cancelTarget.getAttribute("data-cancel-job"));
     return;
   }
-  var browseTarget = e.target.closest('[data-browse]');
+  var browseTarget = e.target.closest("[data-browse]");
   if (browseTarget) {
     e.preventDefault();
-    browseTo(browseTarget.getAttribute('data-browse'));
+    browseTo(browseTarget.getAttribute("data-browse"));
     return;
   }
 
-  var copyTarget = e.target.closest('[data-copy]');
+  var copyTarget = e.target.closest("[data-copy]");
   if (copyTarget) {
     e.preventDefault();
-    var path = copyTarget.getAttribute('data-copy');
-    navigator.clipboard.writeText(path).then(function() {
+    var path = copyTarget.getAttribute("data-copy");
+    navigator.clipboard.writeText(path).then(function () {
       // A check mark for a moment, then the copy icon again
       copyTarget.innerHTML = CHECK_ICON;
-      copyTarget.classList.add('copied');
-      setTimeout(function() {
+      copyTarget.classList.add("copied");
+      setTimeout(function () {
         copyTarget.innerHTML = COPY_ICON;
-        copyTarget.classList.remove('copied');
+        copyTarget.classList.remove("copied");
       }, 1200);
     });
     return;
   }
 
-  var notesTarget = e.target.closest('[data-notes-toggle]');
+  var notesTarget = e.target.closest("[data-notes-toggle]");
   if (notesTarget) {
     e.preventDefault();
     e.stopPropagation();
@@ -77,19 +79,19 @@ document.addEventListener('click', function(e) {
     return;
   }
 
-  var revealTarget = e.target.closest('[data-reveal]');
+  var revealTarget = e.target.closest("[data-reveal]");
   if (revealTarget) {
     e.preventDefault();
     e.stopPropagation();
-    fetch('/api/reveal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filepath: revealTarget.getAttribute('data-reveal') }),
+    fetch("/api/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filepath: revealTarget.getAttribute("data-reveal") }),
     });
     return;
   }
 
-  var recoverTarget = e.target.closest('[data-recover]');
+  var recoverTarget = e.target.closest("[data-recover]");
   if (recoverTarget) {
     e.preventDefault();
     e.stopPropagation();
@@ -97,14 +99,14 @@ document.addEventListener('click', function(e) {
     return;
   }
 
-  var donorFolderTarget = e.target.closest('[data-donor-folder]');
+  var donorFolderTarget = e.target.closest("[data-donor-folder]");
   if (donorFolderTarget) {
     e.preventDefault();
     e.stopPropagation();
-    openDonorBrowse(donorFolderTarget.getAttribute('data-donor-folder'));
+    openDonorBrowse(donorFolderTarget.getAttribute("data-donor-folder"));
     return;
   }
-  var donorTarget = e.target.closest('[data-set-donor]');
+  var donorTarget = e.target.closest("[data-set-donor]");
   if (donorTarget) {
     e.preventDefault();
     e.stopPropagation();
@@ -115,11 +117,11 @@ document.addEventListener('click', function(e) {
 
 checkFfmpeg();
 // Saved scans are listed but not loaded; the user picks one from the dropdown
-loadSavedScans().then(scans => populateScanDropdown(scans, null));
+loadSavedScans().then((scans) => populateScanDropdown(scans, null));
 try {
-  var savedDir = localStorage.getItem('lastVideoScanDir');
+  var savedDir = localStorage.getItem("lastVideoScanDir");
   if (savedDir) {
-    document.getElementById('dir-input').value = savedDir;
+    document.getElementById("dir-input").value = savedDir;
     watchMount(savedDir);
   }
-} catch(e) {}
+} catch (e) {}

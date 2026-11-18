@@ -31,23 +31,38 @@ import time
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
 
-from backend import state                                    # noqa: E402
-from backend.config import VIDEO_EXTS                        # noqa: E402
-from backend.decode import _check_decodes_cleanly            # noqa: E402
-from backend.detect import check_video                       # noqa: E402
-from backend.donors import _usable_donor                     # noqa: E402
-from backend.recovery import _execute_recovery               # noqa: E402
-from backend.scan import scan_directory_gen                  # noqa: E402
-from tests.fixtures import ui_offers_recover                 # noqa: E402
+from backend import state  # noqa: E402
+from backend.config import VIDEO_EXTS  # noqa: E402
+from backend.decode import _check_decodes_cleanly  # noqa: E402
+from backend.detect import check_video  # noqa: E402
+from backend.donors import _usable_donor  # noqa: E402
+from backend.recovery import _execute_recovery  # noqa: E402
+from backend.scan import scan_directory_gen  # noqa: E402
+from tests.fixtures import ui_offers_recover  # noqa: E402
 
 
 def count_frames(path):
     import subprocess
     from backend.tools import _ffprobe_path
-    r = subprocess.run([_ffprobe_path, '-v', 'error', '-select_streams', 'v:0',
-                        '-count_packets', '-show_entries', 'stream=nb_read_packets',
-                        '-of', 'csv=p=0', path], capture_output=True, text=True)
-    digits = ''.join(c for c in r.stdout if c.isdigit())
+
+    r = subprocess.run(
+        [
+            _ffprobe_path,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_packets",
+            "-show_entries",
+            "stream=nb_read_packets",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    digits = "".join(c for c in r.stdout if c.isdigit())
     return int(digits) if digits else 0
 
 
@@ -55,7 +70,7 @@ def add_donor_folder(donor_dir, target_dir):
     """Make donor_dir's healthy videos donor candidates for target_dir."""
     found = []
     for dirpath, dirnames, filenames in os.walk(donor_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '__MACOSX']
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "__MACOSX"]
         for name in sorted(filenames):
             if os.path.splitext(name)[1].lower() not in VIDEO_EXTS:
                 continue
@@ -73,52 +88,59 @@ def add_donor_folder(donor_dir, target_dir):
 
 def run(input_dir, donor_dir=None, keep_dir=None):
     issues = []
-    state.scan_state['results'] = []
+    state.scan_state["results"] = []
     for event in scan_directory_gen(input_dir):
-        if event['type'] == 'issue':
+        if event["type"] == "issue":
             issues.append(event)
-            state.scan_state['results'].append(event)
-        elif event['type'] == 'error':
-            sys.exit(event['message'])
+            state.scan_state["results"].append(event)
+        elif event["type"] == "error":
+            sys.exit(event["message"])
 
     if donor_dir:
         found = 0
-        for d in sorted({e['dir'] for e in issues}):
+        for d in sorted({e["dir"] for e in issues}):
             found = add_donor_folder(donor_dir, d)
-        print(f'Using {found} healthy donors from {donor_dir}')
+        print(f"Using {found} healthy donors from {donor_dir}")
 
-    out_dir = tempfile.mkdtemp(prefix='frayme-regression-')
+    out_dir = tempfile.mkdtemp(prefix="frayme-regression-")
     if keep_dir:
         os.makedirs(keep_dir, exist_ok=True)
     results = {}
     try:
-        for ev in sorted(issues, key=lambda e: e['filepath']):
-            rel = os.path.relpath(ev['filepath'], input_dir)
-            entry = {'status': ev['status']}
-            if not ui_offers_recover(ev['status'], ev['details']):
-                entry['outcome'] = 'not offered'
+        for ev in sorted(issues, key=lambda e: e["filepath"]):
+            rel = os.path.relpath(ev["filepath"], input_dir)
+            entry = {"status": ev["status"]}
+            if not ui_offers_recover(ev["status"], ev["details"]):
+                entry["outcome"] = "not offered"
                 results[rel] = entry
-                print(f'{rel:44} {ev["status"]:10} not offered')
+                print(f"{rel:44} {ev['status']:10} not offered")
                 continue
             t = time.time()
             try:
-                r = _execute_recovery(ev['filepath'], output_dir=out_dir)
-                ok, msg = _check_decodes_cleanly(r['output'])
-                entry.update(outcome='recovered' if ok else 'bad output',
-                             method=r['method'], frames=count_frames(r['output']),
-                             check=msg)
+                r = _execute_recovery(ev["filepath"], output_dir=out_dir)
+                ok, msg = _check_decodes_cleanly(r["output"])
+                entry.update(
+                    outcome="recovered" if ok else "bad output",
+                    method=r["method"],
+                    frames=count_frames(r["output"]),
+                    check=msg,
+                )
                 if keep_dir:
-                    shutil.move(r['output'], os.path.join(keep_dir, r['filename']))
+                    shutil.move(r["output"], os.path.join(keep_dir, r["filename"]))
                 else:
-                    os.unlink(r['output'])
+                    os.unlink(r["output"])
             except Exception as e:
-                entry.update(outcome='failed', error=str(e)[:200])
-            entry['seconds'] = round(time.time() - t, 1)
+                entry.update(outcome="failed", error=str(e)[:200])
+            entry["seconds"] = round(time.time() - t, 1)
             results[rel] = entry
-            detail = (f'{entry.get("method", "")} {entry.get("frames", "")} frames'
-                      if entry['outcome'] != 'failed' else entry['error'][:70])
-            print(f'{rel:44} {ev["status"]:10} {entry["outcome"]:10} '
-                  f'{detail} ({entry["seconds"]}s)')
+            detail = (
+                f"{entry.get('method', '')} {entry.get('frames', '')} frames"
+                if entry["outcome"] != "failed"
+                else entry["error"][:70]
+            )
+            print(
+                f"{rel:44} {ev['status']:10} {entry['outcome']:10} {detail} ({entry['seconds']}s)"
+            )
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
     return results
@@ -126,41 +148,45 @@ def run(input_dir, donor_dir=None, keep_dir=None):
 
 def compare(old, new):
     """Lines describing changes, and whether anything got worse."""
-    rank = {'recovered': 3, 'bad output': 1, 'failed': 0, 'not offered': 0}
+    rank = {"recovered": 3, "bad output": 1, "failed": 0, "not offered": 0}
     lines, worse = [], False
     for name in sorted(set(old) | set(new)):
         a, b = old.get(name), new.get(name)
         if a is None or b is None:
-            lines.append(f'{name}: {"new file" if a is None else "no longer found"}')
+            lines.append(f"{name}: {'new file' if a is None else 'no longer found'}")
             continue
         changes = []
-        for key in ('status', 'outcome', 'method'):
+        for key in ("status", "outcome", "method"):
             if a.get(key) != b.get(key):
-                changes.append(f'{key} {a.get(key)} -> {b.get(key)}')
-        fa, fb = a.get('frames') or 0, b.get('frames') or 0
+                changes.append(f"{key} {a.get(key)} -> {b.get(key)}")
+        fa, fb = a.get("frames") or 0, b.get("frames") or 0
         if fa != fb:
-            changes.append(f'frames {fa} -> {fb}')
+            changes.append(f"frames {fa} -> {fb}")
         if changes:
-            lines.append(f'{name}: ' + ', '.join(changes))
-        if (rank.get(b.get('outcome'), 0) < rank.get(a.get('outcome'), 0)
-                or (a.get('outcome') == b.get('outcome') == 'recovered' and fb < fa)):
+            lines.append(f"{name}: " + ", ".join(changes))
+        if rank.get(b.get("outcome"), 0) < rank.get(a.get("outcome"), 0) or (
+            a.get("outcome") == b.get("outcome") == "recovered" and fb < fa
+        ):
             worse = True
     return lines, worse
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('input_dir')
-    ap.add_argument('--donors', help='folder of healthy videos to use as donors')
-    ap.add_argument('--save', help='write outcomes to this JSON file')
-    ap.add_argument('--compare', help='compare with outcomes saved earlier')
-    ap.add_argument('--keep', metavar='OUTPUT_DIR',
-                    help='save the recovered videos here instead of deleting them')
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("input_dir")
+    ap.add_argument("--donors", help="folder of healthy videos to use as donors")
+    ap.add_argument("--save", help="write outcomes to this JSON file")
+    ap.add_argument("--compare", help="compare with outcomes saved earlier")
+    ap.add_argument(
+        "--keep",
+        metavar="OUTPUT_DIR",
+        help="save the recovered videos here instead of deleting them",
+    )
     args = ap.parse_args()
 
     input_dir = os.path.abspath(os.path.expanduser(args.input_dir))
     if not os.path.isdir(input_dir):
-        print(f'{input_dir} not found; nothing to check.')
+        print(f"{input_dir} not found; nothing to check.")
         return 0
     donors = os.path.abspath(os.path.expanduser(args.donors)) if args.donors else None
 
@@ -168,25 +194,25 @@ def main():
     results = run(input_dir, donors, keep)
     counts = {}
     for entry in results.values():
-        counts[entry['outcome']] = counts.get(entry['outcome'], 0) + 1
-    print('\n' + ', '.join(f'{v} {k}' for k, v in sorted(counts.items())))
+        counts[entry["outcome"]] = counts.get(entry["outcome"], 0) + 1
+    print("\n" + ", ".join(f"{v} {k}" for k, v in sorted(counts.items())))
 
     if args.save:
-        with open(args.save, 'w') as f:
+        with open(args.save, "w") as f:
             json.dump(results, f, indent=1, sort_keys=True)
-        print(f'Saved to {args.save}')
+        print(f"Saved to {args.save}")
     if args.compare:
         with open(args.compare) as f:
             old = json.load(f)
         lines, worse = compare(old, results)
-        print(f'\nChanges since {args.compare}:' if lines else '\nNo changes.')
+        print(f"\nChanges since {args.compare}:" if lines else "\nNo changes.")
         for line in lines:
-            print('  ' + line)
+            print("  " + line)
         if worse:
-            print('Some recoveries got worse.')
+            print("Some recoveries got worse.")
             return 1
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
