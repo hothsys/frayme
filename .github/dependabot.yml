@@ -1,3 +1,8 @@
+# GENERATED from hothsys/.github configs/dependabot.template.yml.
+# Do not edit here - edit the template; the org sync workflow opens a
+# PR with the change. Only ecosystems with manifests in this repo are
+# listed.
+
 version: 2
 updates:
   - package-ecosystem: "pip"
@@ -5,6 +10,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    
     assignees:
       - "hgosalia"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
