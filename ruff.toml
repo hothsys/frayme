@@ -1,0 +1,27 @@
+# ruff.toml - standard config for hothsys Python projects.
+# Copy this file to the repo root. Local copies keep editors and CI on the
+# same rules; refresh the copy when this file changes.
+# Per-repo overrides (e.g. an older target-version) belong in the repo's copy.
+
+target-version = "py37"
+line-length = 100
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade (modernize syntax)
+    "B",    # flake8-bugbear (common bugs)
+    "SIM",  # flake8-simplify
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "E501",  # line length handled by the formatter
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
