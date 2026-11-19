@@ -6,14 +6,12 @@ function cancelQueuedJob(jobId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ job_id: jobId }),
   })
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (d) {
+    .then((r) => r.json())
+    .then((d) => {
       if (!d.ok) {
         alert(d.error || "Could not cancel this recovery.");
       } else {
-        var btn = document.querySelector('[data-recover="' + CSS.escape(d.filepath) + '"]');
+        var btn = document.querySelector(`[data-recover="${CSS.escape(d.filepath)}"]`);
         if (btn && btn.textContent === "Queued") {
           btn.textContent = "Recover";
           btn.disabled = false;
@@ -21,7 +19,7 @@ function cancelQueuedJob(jobId) {
       }
       pollQueueStatus();
     })
-    .catch(function (err) {
+    .catch((err) => {
       console.error("Cancelling recovery failed:", err);
     });
 }
@@ -39,7 +37,7 @@ function recoverVideo(btn) {
   btn
     .closest(".issue-row")
     .querySelectorAll(".recover-error, .recover-hints")
-    .forEach(function (el) {
+    .forEach((el) => {
       el.remove();
     });
 
@@ -53,24 +51,22 @@ function recoverVideo(btn) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (d) {
+    .then((r) => r.json())
+    .then((d) => {
       if (d.ok) {
         btn.textContent = "Queued";
         showQueuePanel();
         startQueuePolling();
       } else if (d.error_kind === "output_dir") {
         // Too long for the button, and it applies to every file
-        alert(d.error + '\n\nChoose another folder with Browse next to "Save recovered to".');
+        alert(`${d.error}\n\nChoose another folder with Browse next to "Save recovered to".`);
         btn.textContent = "Recover";
         btn.disabled = false;
       } else {
         btn.textContent = d.error || "Failed";
         btn.style.color = "var(--red)";
         btn.style.borderColor = "rgba(224,82,82,.35)";
-        setTimeout(function () {
+        setTimeout(() => {
           btn.textContent = "Recover";
           btn.style.color = "";
           btn.style.borderColor = "";
@@ -78,10 +74,10 @@ function recoverVideo(btn) {
         }, 3000);
       }
     })
-    .catch(function () {
+    .catch(() => {
       btn.textContent = "Error";
       btn.style.color = "var(--red)";
-      setTimeout(function () {
+      setTimeout(() => {
         btn.textContent = "Recover";
         btn.style.color = "";
         btn.style.borderColor = "";
@@ -114,10 +110,8 @@ function stopQueuePolling() {
 
 function pollQueueStatus() {
   fetch("/api/recover-status")
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (d) {
+    .then((r) => r.json())
+    .then((d) => {
       var jobs = d.jobs || [];
       updateQueuePanel(jobs);
       try {
@@ -125,12 +119,10 @@ function pollQueueStatus() {
       } catch (err) {
         console.error("Updating result rows failed:", err);
       }
-      var active = jobs.some(function (j) {
-        return j.status === "queued" || j.status === "recovering";
-      });
+      var active = jobs.some((j) => j.status === "queued" || j.status === "recovering");
       if (!active) stopQueuePolling();
     })
-    .catch(function (err) {
+    .catch((err) => {
       console.error("Recovery status poll failed:", err);
     });
 }
@@ -145,20 +137,18 @@ function updateQueuePanel(jobs) {
   panel.style.display = "flex";
 
   var counts = { queued: 0, recovering: 0, done: 0, failed: 0 };
-  jobs.forEach(function (j) {
+  jobs.forEach((j) => {
     counts[j.status]++;
   });
   var parts = [];
-  if (counts.recovering) parts.push(counts.recovering + " recovering");
-  if (counts.queued) parts.push(counts.queued + " queued");
-  if (counts.done) parts.push(counts.done + " done");
-  if (counts.failed) parts.push(counts.failed + " failed");
+  if (counts.recovering) parts.push(`${counts.recovering} recovering`);
+  if (counts.queued) parts.push(`${counts.queued} queued`);
+  if (counts.done) parts.push(`${counts.done} done`);
+  if (counts.failed) parts.push(`${counts.failed} failed`);
   // Non-breaking spaces inside each item and before each dot, so a wrap
   // falls between items and never leaves a dot at the start of a line
   document.getElementById("queue-counts").textContent = parts
-    .map(function (p) {
-      return p.replace(/ /g, "\u00a0");
-    })
+    .map((p) => p.replace(/ /g, "\u00a0"))
     .join("\u00a0\u00b7 ");
 
   var clearBtn = document.querySelector(".queue-clear-btn");
@@ -169,7 +159,7 @@ function updateQueuePanel(jobs) {
     : "Nothing has finished yet";
 
   body.innerHTML = jobs
-    .map(function (job) {
+    .map((job) => {
       var statusClass;
       switch (job.status) {
         case "queued":
@@ -197,12 +187,12 @@ function updateQueuePanel(jobs) {
       var detail = "";
       if (job.status === "done" && job.result) {
         detail = formatSize(job.result.size);
-        if (job.result.method) detail += " · " + escHtml(job.result.method);
+        if (job.result.method) detail += ` · ${escHtml(job.result.method)}`;
       } else if (job.status === "failed" && job.error) {
         detail = escHtml(job.error);
       } else if (job.status === "recovering" && job.started_at) {
         var elapsed = Math.floor(Date.now() / 1000 - job.started_at);
-        detail = elapsed + "s elapsed";
+        detail = `${elapsed}s elapsed`;
       }
 
       var cancel =
@@ -226,7 +216,7 @@ function updateQueuePanel(jobs) {
             ' in Finder">' +
             escHtml(job.filename) +
             "</a>"
-          : '<span class="queue-filename">' + escHtml(job.filename) + "</span>") +
+          : `<span class="queue-filename">${escHtml(job.filename)}</span>`) +
         '<span class="queue-detail">' +
         detail +
         "</span>" +
@@ -245,12 +235,12 @@ function updateQueuePanel(jobs) {
 var handledFailures = {};
 
 function showRecoverFailure(job) {
-  var btn = document.querySelector('[data-recover="' + CSS.escape(job.filepath) + '"]');
+  var btn = document.querySelector(`[data-recover="${CSS.escape(job.filepath)}"]`);
   if (!btn) return;
   btn.textContent = "Retry";
   btn.disabled = false;
   // Most failures come down to a missing or mismatched donor
-  if (!document.querySelector('[data-donor-folder="' + CSS.escape(job.filepath) + '"]')) {
+  if (!document.querySelector(`[data-donor-folder="${CSS.escape(job.filepath)}"]`)) {
     btn.insertAdjacentHTML(
       "beforebegin",
       '<button class="row-btn" data-donor-folder="' +
@@ -259,7 +249,7 @@ function showRecoverFailure(job) {
     );
   }
   var info = btn.closest(".issue-row").querySelector(".issue-info");
-  var msg = "Recovery failed: " + (job.error || "unknown error");
+  var msg = `Recovery failed: ${job.error || "unknown error"}`;
   info.insertAdjacentHTML(
     "beforeend",
     '<div class="issue-reason recover-error" title="' +
@@ -271,7 +261,7 @@ function showRecoverFailure(job) {
   // The row's facts and notes already show these clues for files scanned
   // since they were added; older saved scans don't have them
   var ev = findIssue(job.filepath);
-  var clues = ev && ev.details && ev.details.findings ? "" : donorClues(job.hints);
+  var clues = ev?.details?.findings ? "" : donorClues(job.hints);
   if (clues) {
     info.insertAdjacentHTML(
       "beforeend",
@@ -288,36 +278,24 @@ function showRecoverFailure(job) {
 // generic names. Text found loose in the data may come from another file.
 function donorClues(hints) {
   if (!hints) return "";
-  var strong = (hints.camera || [])
-    .filter(function (c) {
-      return c[1];
-    })
-    .map(function (c) {
-      return c[0];
-    });
-  var weak = (hints.camera || [])
-    .filter(function (c) {
-      return !c[1];
-    })
-    .map(function (c) {
-      return c[0];
-    });
+  var strong = (hints.camera || []).filter((c) => c[1]).map((c) => c[0]);
+  var weak = (hints.camera || []).filter((c) => !c[1]).map((c) => c[0]);
   var parts = [];
   if (strong.length) parts.push(strong.join(", "));
   if (hints.resolution) parts.push(hints.resolution.replace("x", "×"));
   var unverified = [];
-  if (weak.length) unverified.push("mentions " + weak.join(", "));
-  if (hints.dates && hints.dates.length) unverified.push("dates " + hints.dates.join(", "));
+  if (weak.length) unverified.push(`mentions ${weak.join(", ")}`);
+  if (hints.dates?.length) unverified.push(`dates ${hints.dates.join(", ")}`);
   if (unverified.length) {
-    parts.push("data also " + unverified.join("; ") + " (unverified, may belong to another file)");
+    parts.push(`data also ${unverified.join("; ")} (unverified, may belong to another file)`);
   }
   return parts.length
-    ? "Donor clues: " + parts.join(" · ")
+    ? `Donor clues: ${parts.join(" · ")}`
     : "Donor clues: none found in this file";
 }
 
 function updateInlineRows(jobs) {
-  jobs.forEach(function (job) {
+  jobs.forEach((job) => {
     if (job.status === "failed" && !handledFailures[job.id]) {
       handledFailures[job.id] = true;
       showRecoverFailure(job);
@@ -341,8 +319,7 @@ function updateInlineRows(jobs) {
       // any row with a "Queued" button overwrote every other queued file's
       // row with this file when several were queued at once.
       var link =
-        ev &&
-        document.querySelector('.issue-filename[data-reveal="' + CSS.escape(job.filepath) + '"]');
+        ev && document.querySelector(`.issue-filename[data-reveal="${CSS.escape(job.filepath)}"]`);
       if (link) {
         link.closest(".issue-row").outerHTML = buildIssueRowHtml(ev);
       }
@@ -352,14 +329,14 @@ function updateInlineRows(jobs) {
 
 function clearCompletedJobs() {
   // Remove finished rows right away; the poll below syncs with the server
-  document.querySelectorAll("#queue-body .qs-done, #queue-body .qs-failed").forEach(function (el) {
+  document.querySelectorAll("#queue-body .qs-done, #queue-body .qs-failed").forEach((el) => {
     el.remove();
   });
   if (!document.querySelector("#queue-body .queue-item")) {
     document.getElementById("queue-panel").style.display = "none";
   }
   fetch("/api/recover-queue-clear", { method: "POST" })
-    .catch(function (err) {
+    .catch((err) => {
       console.error("Clearing finished jobs failed:", err);
     })
     .then(pollQueueStatus);
@@ -380,7 +357,7 @@ function setDonor(btn) {
         donorMap[dir] = filepath;
         btn.textContent = "Donor Set!";
         btn.style.color = "var(--green)";
-        setTimeout(function () {
+        setTimeout(() => {
           btn.textContent = "Set as Donor";
           btn.style.color = "";
         }, 1500);

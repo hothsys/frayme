@@ -16,7 +16,7 @@ var defaultOutputDir = "";
 var outputDir = "";
 try {
   outputDir = localStorage.getItem("outputDir") || "";
-} catch (e) {}
+} catch {}
 
 function currentOutputDir() {
   return outputDir || defaultOutputDir;
@@ -27,7 +27,7 @@ function setOutputDir(path) {
   try {
     if (outputDir) localStorage.setItem("outputDir", outputDir);
     else localStorage.removeItem("outputDir");
-  } catch (e) {}
+  } catch {}
   showOutputLabel();
 }
 
@@ -44,13 +44,11 @@ function showOutputDir() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filepath: currentOutputDir(), open: true }),
   })
-    .then(function (r) {
-      return r.json();
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.error) alert(`Could not open ${currentOutputDir()}: ${d.error}`);
     })
-    .then(function (d) {
-      if (d.error) alert("Could not open " + currentOutputDir() + ": " + d.error);
-    })
-    .catch(function (err) {
+    .catch((err) => {
       console.error("Opening the output folder failed:", err);
     });
 }
@@ -101,7 +99,7 @@ function selectBrowseDir() {
 }
 
 function addDonorFolder(filepath, folder) {
-  var btn = document.querySelector('[data-donor-folder="' + CSS.escape(filepath) + '"]');
+  var btn = document.querySelector(`[data-donor-folder="${CSS.escape(filepath)}"]`);
   if (btn) {
     btn.textContent = "Checking folder…";
     btn.disabled = true;
@@ -111,10 +109,8 @@ function addDonorFolder(filepath, folder) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filepath: filepath, donor_dir: folder }),
   })
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (d) {
+    .then((r) => r.json())
+    .then((d) => {
       if (btn) {
         btn.textContent = "Choose Donor";
         btn.disabled = false;
@@ -131,10 +127,10 @@ function addDonorFolder(filepath, folder) {
         return;
       }
       // Retry with the new candidates
-      var recBtn = document.querySelector('[data-recover="' + CSS.escape(filepath) + '"]');
+      var recBtn = document.querySelector(`[data-recover="${CSS.escape(filepath)}"]`);
       if (recBtn) recoverVideo(recBtn);
     })
-    .catch(function (err) {
+    .catch((err) => {
       if (btn) {
         btn.textContent = "Choose Donor";
         btn.disabled = false;
@@ -148,7 +144,7 @@ function browseTo(path) {
   var list = document.getElementById("browse-list");
   list.innerHTML = '<div style="padding:20px;color:var(--text3)">Loading…</div>';
 
-  fetch("/api/browse?path=" + encodeURIComponent(path))
+  fetch(`/api/browse?path=${encodeURIComponent(path)}`)
     .then((r) => r.json())
     .then((d) => {
       if (d.error) {
@@ -156,8 +152,7 @@ function browseTo(path) {
           browseTo("/");
           return;
         }
-        list.innerHTML =
-          '<div style="padding:20px;color:var(--red)">' + escHtml(d.error) + "</div>";
+        list.innerHTML = `<div style="padding:20px;color:var(--red)">${escHtml(d.error)}</div>`;
         return;
       }
       browseCurrentPath = d.path;
@@ -165,14 +160,13 @@ function browseTo(path) {
       // Breadcrumb
       var bc = document.getElementById("browse-breadcrumb");
       var parts = d.path.split("/").filter(Boolean);
-      var html =
-        '<span data-browse="/"' + (parts.length === 0 ? ' class="current"' : "") + ">/</span>";
+      var html = `<span data-browse="/"${parts.length === 0 ? ' class="current"' : ""}>/</span>`;
       for (var i = 0; i < parts.length; i++) {
-        var sub = "/" + parts.slice(0, i + 1).join("/");
+        var sub = `/${parts.slice(0, i + 1).join("/")}`;
         if (i === parts.length - 1) {
-          html += ' <span class="current">' + escHtml(parts[i]) + "</span>";
+          html += ` <span class="current">${escHtml(parts[i])}</span>`;
         } else {
-          html += ' <span data-browse="' + escHtml(sub) + '">' + escHtml(parts[i]) + "</span> /";
+          html += ` <span data-browse="${escHtml(sub)}">${escHtml(parts[i])}</span> /`;
         }
       }
       bc.innerHTML = html;
@@ -182,21 +176,20 @@ function browseTo(path) {
         list.innerHTML = '<div style="padding:20px;color:var(--text3)">No subdirectories</div>';
       } else {
         list.innerHTML = d.entries
-          .map(function (e) {
-            return (
+          .map(
+            (e) =>
               '<div class="browse-item" data-browse="' +
               escHtml(e.path) +
               '">' +
               '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" ' +
               'stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
               escHtml(e.name) +
-              "</div>"
-            );
-          })
+              "</div>",
+          )
           .join("");
       }
     })
-    .catch(function () {
+    .catch(() => {
       list.innerHTML = '<div style="padding:20px;color:var(--red)">Failed to load directory</div>';
     });
 }

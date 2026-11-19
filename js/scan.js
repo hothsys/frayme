@@ -9,8 +9,12 @@ function startScan() {
     return;
   }
 
-  Object.keys(folderData).forEach((k) => delete folderData[k]);
-  Object.keys(recoveredFiles).forEach((k) => delete recoveredFiles[k]);
+  Object.keys(folderData).forEach((k) => {
+    delete folderData[k];
+  });
+  Object.keys(recoveredFiles).forEach((k) => {
+    delete recoveredFiles[k];
+  });
   document.getElementById("folder-list").innerHTML = "";
   document.getElementById("s-total").textContent = "0";
   document.getElementById("s-no-moov").textContent = "0";
@@ -32,10 +36,10 @@ function startScan() {
 
   try {
     localStorage.setItem("lastVideoScanDir", dir);
-  } catch (e) {}
+  } catch {}
 
   if (eventSource) eventSource.close();
-  eventSource = new EventSource("/api/scan?dir=" + encodeURIComponent(dir));
+  eventSource = new EventSource(`/api/scan?dir=${encodeURIComponent(dir)}`);
 
   eventSource.onmessage = (e) => {
     const ev = JSON.parse(e.data);
@@ -46,8 +50,8 @@ function startScan() {
     eventSource.close();
     eventSource = null;
     scanDone(
-      parseInt(document.getElementById("p-scanned").textContent) || 0,
-      parseInt(document.getElementById("p-issues").textContent) || 0,
+      parseInt(document.getElementById("p-scanned").textContent, 10) || 0,
+      parseInt(document.getElementById("p-issues").textContent, 10) || 0,
     );
   };
 }
@@ -81,19 +85,19 @@ function handleEvent(ev) {
       if (ev.duration != null) {
         var dm = Math.floor(ev.duration / 60);
         var ds = Math.floor(ev.duration % 60);
-        fileText += " \u00b7 " + dm + ":" + (ds < 10 ? "0" : "") + ds;
+        fileText += ` \u00b7 ${dm}:${ds < 10 ? "0" : ""}${ds}`;
       }
       document.getElementById("p-current").textContent = fileText;
       if (ev.total > 0) {
         var pct = Math.round((ev.scanned / ev.total) * 100);
-        document.getElementById("p-pct").textContent = pct + "%";
-        document.getElementById("p-bar").style.width = pct + "%";
+        document.getElementById("p-pct").textContent = `${pct}%`;
+        document.getElementById("p-bar").style.width = `${pct}%`;
       }
       break;
     case "issue":
       addIssue(ev);
       document.getElementById("p-issues").textContent =
-        parseInt(document.getElementById("p-issues").textContent) || 0;
+        parseInt(document.getElementById("p-issues").textContent, 10) || 0;
       break;
     case "complete":
       scanDone(ev.scanned, ev.issues);
@@ -122,11 +126,11 @@ function addIssue(ev) {
 }
 
 function upsertFolderGroup(dir) {
-  var id = "fg-" + CSS.escape(dir);
+  var id = `fg-${CSS.escape(dir)}`;
   var existing = document.getElementById(id);
   if (existing) {
     var fc = existing.querySelector(".fc");
-    if (fc) fc.textContent = folderData[dir].total + " issues";
+    if (fc) fc.textContent = `${folderData[dir].total} issues`;
     return;
   }
   var html =
@@ -169,8 +173,7 @@ function scanDone(scanned, issues, wasCancelled) {
       notice.textContent = "Scan cancelled while finding video files.";
       return;
     }
-    notice.textContent =
-      "Scan cancelled after " + scanned + " of " + total + " files. Results are partial.";
+    notice.textContent = `Scan cancelled after ${scanned} of ${total} files. Results are partial.`;
   }
 
   updateSummary(issues, scanned);
@@ -185,15 +188,15 @@ function scanDone(scanned, issues, wasCancelled) {
   } else {
     document.getElementById("empty-results").style.display = "block";
     document.getElementById("empty-results").textContent = wasCancelled
-      ? "No issues found in the " + scanned + " files checked before cancelling."
-      : "All " + scanned + " video files are intact.";
+      ? `No issues found in the ${scanned} files checked before cancelling.`
+      : `All ${scanned} video files are intact.`;
   }
 }
 
 function updateSummary(issues, scanned) {
   var counts = { no_moov: 0, corrupt: 0, truncated: 0, empty: 0, error: 0 };
-  Object.values(folderData).forEach(function (fd) {
-    fd.issues.forEach(function (i) {
+  Object.values(folderData).forEach((fd) => {
+    fd.issues.forEach((i) => {
       if (counts[i.status] !== undefined) counts[i.status]++;
     });
   });
@@ -234,13 +237,13 @@ function cancelScan() {
   var cancelBtn = document.getElementById("cancel-btn");
   cancelBtn.disabled = true;
   cancelBtn.textContent = "Cancelling…";
-  fetch("/api/cancel", { method: "POST" }).catch(function () {});
+  fetch("/api/cancel", { method: "POST" }).catch(() => {});
   // The server normally confirms within a moment; don't leave the UI stuck if it doesn't
-  cancelFallbackTimer = setTimeout(function () {
+  cancelFallbackTimer = setTimeout(() => {
     if (eventSource) {
       scanDone(
-        parseInt(document.getElementById("p-scanned").textContent) || 0,
-        parseInt(document.getElementById("p-issues").textContent) || 0,
+        parseInt(document.getElementById("p-scanned").textContent, 10) || 0,
+        parseInt(document.getElementById("p-issues").textContent, 10) || 0,
         true,
       );
     }
@@ -254,22 +257,21 @@ function cancelScan() {
 var currentSort = "name";
 try {
   currentSort = localStorage.getItem("resultSort") || "name";
-} catch (e) {}
+} catch {}
 var STATUS_ORDER = { no_moov: 0, corrupt: 1, truncated: 2, error: 3, empty: 4 };
 
 function setSort(value) {
   currentSort = value;
   try {
     localStorage.setItem("resultSort", value);
-  } catch (e) {}
+  } catch {}
   applyFilter();
 }
 
 function sortIssues(list) {
-  var byName = function (a, b) {
-    return a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: "base" });
-  };
-  return list.slice().sort(function (a, b) {
+  var byName = (a, b) =>
+    a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: "base" });
+  return list.slice().sort((a, b) => {
     if (currentSort === "size") return (b.file_size || 0) - (a.file_size || 0) || byName(a, b);
     if (currentSort === "status") {
       var sa = STATUS_ORDER[a.status],
@@ -282,7 +284,9 @@ function sortIssues(list) {
 
 function setFilter(btn, filter) {
   currentFilter = filter;
-  document.querySelectorAll(".filter-pill").forEach((p) => p.classList.remove("active"));
+  document.querySelectorAll(".filter-pill").forEach((p) => {
+    p.classList.remove("active");
+  });
   btn.classList.add("active");
   applyFilter();
 }
@@ -294,8 +298,8 @@ function matchesFilter(status) {
 
 function applyFilter() {
   var totalVisible = 0;
-  Object.keys(folderData).forEach(function (dir) {
-    var id = "fg-" + CSS.escape(dir);
+  Object.keys(folderData).forEach((dir) => {
+    var id = `fg-${CSS.escape(dir)}`;
     var group = document.getElementById(id);
     if (!group) return;
 
@@ -303,12 +307,12 @@ function applyFilter() {
     body.innerHTML = "";
 
     var visible = sortIssues(folderData[dir].issues.filter((i) => matchesFilter(i.status)));
-    visible.forEach(function (ev) {
+    visible.forEach((ev) => {
       body.insertAdjacentHTML("beforeend", buildIssueRowHtml(ev));
     });
 
     var fc = group.querySelector(".fc");
-    if (fc) fc.textContent = visible.length + " issues";
+    if (fc) fc.textContent = `${visible.length} issues`;
     group.style.display = visible.length > 0 ? "" : "none";
     totalVisible += visible.length;
   });
@@ -320,7 +324,7 @@ function applyFilter() {
 // ── Export ──
 
 function exportData(fmt) {
-  window.location.href = "/api/export?format=" + fmt;
+  window.location.href = `/api/export?format=${fmt}`;
 }
 
 // Scripts load at the end of the page, so the picker exists already
