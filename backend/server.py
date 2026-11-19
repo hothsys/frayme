@@ -8,8 +8,7 @@ import subprocess
 import sys
 import time
 from http.server import SimpleHTTPRequestHandler
-from urllib.parse import parse_qs
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .config import DEFAULT_OUTPUT_DIR, VIDEO_EXTS
 from .detect import check_video
@@ -20,7 +19,6 @@ from .recovery import _check_output_dir, _execute_recovery
 from .scan import scan_directory_gen
 from .state import APP_DIR, donor_lock, donor_map, donor_pool, scan_state
 from .tools import _ffmpeg_path, _ffprobe_path, has_ffmpeg, has_ffprobe
-
 
 # ─── HTTP handler ─────────────────────────────────────────────────────────────
 

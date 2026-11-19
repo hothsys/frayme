@@ -1,5 +1,6 @@
 """H.264/HEVC stream handling: bit reading, NAL scanning, parameter sets, and the Annex-B writer."""
 
+import contextlib
 import mmap
 import os
 import re
@@ -10,7 +11,6 @@ import tempfile
 from .decode import _decode_stats
 from .mp4 import parse_boxes
 from .tools import _ffmpeg_path, has_ffmpeg
-
 
 # Largest plausible size per NAL type; anything bigger is junk read as a length
 _H264_NAL_MAX = {
@@ -254,10 +254,9 @@ def _plausible_slice_header(header, codec):
     slice_type, bit = _read_ue(header, bit)
     if slice_type is None or slice_type > 9:
         return False
-    if header[0] & 0x1F == 5:
-        # IDR slices are always I or SI and always referenced
-        if slice_type % 5 not in (2, 4) or not header[0] & 0x60:
-            return False
+    # IDR slices are always I or SI and always referenced
+    if header[0] & 0x1F == 5 and (slice_type % 5 not in (2, 4) or not header[0] & 0x60):
+        return False
     pps_id, _ = _read_ue(header, bit)
     return pps_id is not None and pps_id <= 255
 
@@ -584,10 +583,15 @@ def _find_inband_params(filepath, mdat_offset, nal_entries, codec="h264"):
     """
     if codec == "hevc":
         kinds = {32: "vps", 33: "sps", 34: "pps"}
-        get_type = lambda b: (b >> 1) & 0x3F
+
+        def get_type(b):
+            return (b >> 1) & 0x3F
     else:
         kinds = {7: "sps", 8: "pps"}
-        get_type = lambda b: b & 0x1F
+
+        def get_type(b):
+            return b & 0x1F
+
     found = {"vps": [], "sps": [], "pps": []}
 
     def add(kind, nal):
@@ -660,10 +664,7 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec="h264", retur
             b = f.read(1)
             if not b:
                 continue
-            if codec == "hevc":
-                nal_type = (b[0] >> 1) & 0x3F
-            else:
-                nal_type = b[0] & 0x1F
+            nal_type = b[0] >> 1 & 63 if codec == "hevc" else b[0] & 31
             if not found_idr:
                 if nal_type in idr_types:
                     found_idr = True
@@ -677,7 +678,7 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec="h264", retur
     # (first_mb_in_slice / first_slice_segment_in_pic_flag)
     expected_frames = 0
     with open(filepath, "rb") as f:
-        for offset, length in test_nals:
+        for offset, _length in test_nals:
             f.seek(offset)
             head = f.read(3)
             if codec == "hevc":
@@ -726,10 +727,8 @@ def _probe_sps_candidates(filepath, nal_entries, candidates, codec="h264", retur
         except Exception:
             continue
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
 
     if return_score:
         return best, (best_errors if best_errors != float("inf") else None)
@@ -817,7 +816,7 @@ def _write_annex_b_stream(
     # Find first IDR keyframe — skip orphaned P/B-frames before it
     first_idr = 0
     with open(filepath, "rb") as f:
-        for i, (offset, length) in enumerate(nal_entries):
+        for i, (offset, _length) in enumerate(nal_entries):
             f.seek(offset)
             b = f.read(1)
             if b and _get_nal_type(b[0]) in idr_types:
@@ -1004,7 +1003,7 @@ class _BitWriter:
 
     def nal(self):
         """The NAL bytes: stop bit, byte alignment, emulation prevention."""
-        bits = self.bits + [1]
+        bits = [*self.bits, 1]
         bits += [0] * (-len(bits) % 8)
         raw = bytes(int("".join(map(str, bits[i : i + 8])), 2) for i in range(0, len(bits), 8))
         out, zeros = bytearray(), 0

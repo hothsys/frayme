@@ -7,7 +7,6 @@ from .config import _COMMON_FRAME_SIZES
 from .h264 import _find_inband_params, _parse_h264_sps_order, _rbsp, _read_ue, _scan_mdat_for_nals
 from .mp4 import parse_boxes
 
-
 # Clues to a damaged file's source camera, for choosing a donor. Strong
 # clues come from where the camera itself writes them; text found loose in
 # the data may belong to another file (carved files mix files' data).
@@ -94,7 +93,7 @@ def _source_hints(filepath):
             else:
                 starts, pictures = collections.Counter(), 0
                 with open(filepath, "rb") as f:
-                    for offset, length in nal_entries[:400]:
+                    for offset, _length in nal_entries[:400]:
                         f.seek(offset)
                         nal = f.read(16)
                         if 1 <= nal[0] & 0x1F <= 5:

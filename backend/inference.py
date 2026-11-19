@@ -245,7 +245,7 @@ def _header_shortlist(slices, pps_id):
             for w in (0, 1)
             for b in ((0, 1) if has_b else (0,))
             if w or b
-            for r in list(range(8)) + [15]
+            for r in [*range(8), 15]
         ]
         for entropy in (0, 1):
             for deblock in (0, 1):
@@ -321,8 +321,8 @@ def _keyframe_mbs_decoded(filepath, keyframe, params, check_bottom=False):
                 "h264",
                 "-i",
                 tmp_path,
-            ]
-            + output,
+                *output,
+            ],
             capture_output=True,
             timeout=30,
         )
@@ -461,9 +461,8 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
             nal_type = head[0] & 0x1F
             if not 1 <= nal_type <= 5:
                 continue
-            if nal_type == 5 or slices:
-                if len(slices) < 160:
-                    slices.append(head)
+            if (nal_type == 5 or slices) and len(slices) < 160:
+                slices.append(head)
             starts_picture = len(head) > 1 and head[1] & 0x80
             if starts_picture:
                 if current:
@@ -487,7 +486,10 @@ def _infer_h264_params(filepath, nal_entries, hints=()):
         return None
 
     max_first = max(_read_ue(_rbsp(n, 8), 8)[0] or 0 for n in slices)
-    mbs = lambda s: ((s[0] + 15) // 16) * ((s[1] + 15) // 16)
+
+    def mbs(s):
+        return ((s[0] + 15) // 16) * ((s[1] + 15) // 16)
+
     sizes = [
         s
         for s in dict.fromkeys(

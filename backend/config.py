@@ -2,7 +2,6 @@
 
 import os
 
-
 # Recovery queue infrastructure
 # Where recovered files go unless the user picks another folder
 DEFAULT_OUTPUT_DIR = os.path.expanduser("~/Downloads")

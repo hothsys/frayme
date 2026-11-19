@@ -9,6 +9,7 @@ whose first keyframe is lost restarts at the next one, 30 frames later.
 import os
 import unittest
 
+from backend.recovery import _check_output_dir, _execute_recovery
 from tests.fixtures import (
     CLIPS,
     HAS_X265,
@@ -26,7 +27,6 @@ from tests.fixtures import (
     sha256,
     zero_head,
 )
-from backend.recovery import _check_output_dir, _execute_recovery
 
 
 class RecoveryTestCase(FrayTestCase):

@@ -95,7 +95,7 @@ def make_clip(
         cmd += ["-c:a", "aac", "-ac", "1", "-b:a", "64k"]
     if faststart:
         cmd += ["-movflags", "+faststart"]
-    cmd += list(extra) + [path]
+    cmd += [*extra, path]
     _run(cmd)
     if rotation is not None:
         # Display rotation is set on an input, so it takes a remux. ffmpeg

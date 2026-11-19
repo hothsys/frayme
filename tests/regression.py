@@ -43,6 +43,7 @@ from tests.fixtures import ui_offers_recover  # noqa: E402
 
 def count_frames(path):
     import subprocess
+
     from backend.tools import _ffprobe_path
 
     r = subprocess.run(

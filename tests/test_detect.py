@@ -5,6 +5,7 @@ import os
 import shutil
 import unittest
 
+from backend.detect import check_video
 from tests.fixtures import (
     CLIPS,
     FrayTestCase,
@@ -18,7 +19,6 @@ from tests.fixtures import (
     ui_offers_recover,
     zero_head,
 )
-from backend.detect import check_video
 
 
 @needs_ffmpeg

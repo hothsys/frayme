@@ -1,16 +1,15 @@
 """Directory scanning: walks a tree and streams results as events."""
 
+import contextlib
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .config import OTHER_VIDEO_EXTS, VIDEO_EXTS, WORKER_THREADS
 from .detect import ScanCancelled, check_video
 from .donors import _usable_donor
 from .findings import describe_damaged
 from .state import donor_lock, donor_pool, scan_state
-
 
 # ─── Directory scanner ───────────────────────────────────────────────────────
 
@@ -20,10 +19,8 @@ def _check_and_describe(fpath, should_stop):
     the scan's worker threads, since describing takes about half a second."""
     status, reason, details = check_video(fpath, should_stop)
     if status not in ("ok", "not_video"):
-        try:
+        with contextlib.suppress(Exception):  # the row just shows less
             details["findings"] = describe_damaged(fpath, status, details)
-        except Exception:
-            pass  # the row just shows less
     return status, reason, details
 
 
@@ -51,9 +48,8 @@ def scan_directory_gen(root_dir, scan_id=None):
     # Walking a large drive can take a while; report progress so the UI
     # doesn't look stuck before the first file is checked
     all_files = []
-    dirs_walked = 0
     last_report = time.time()
-    for dirpath, dirnames, filenames in os.walk(root_dir):
+    for dirs_walked, (dirpath, dirnames, filenames) in enumerate(os.walk(root_dir), 1):
         if cancelled():
             yield {"type": "cancelled", "scanned": 0, "issues": 0}
             return
@@ -62,7 +58,6 @@ def scan_directory_gen(root_dir, scan_id=None):
             ext = os.path.splitext(fname)[1].lower()
             if ext in VIDEO_EXTS or ext in OTHER_VIDEO_EXTS:
                 all_files.append(os.path.join(dirpath, fname))
-        dirs_walked += 1
         if time.time() - last_report >= 0.25:
             last_report = time.time()
             yield {

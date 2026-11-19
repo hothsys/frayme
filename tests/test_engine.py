@@ -4,6 +4,8 @@ import os
 import subprocess
 import unittest
 
+from backend.decode import _check_decodes_cleanly, _decode_stats
+from backend.h264 import _scan_mdat_for_nals
 from tests.fixtures import (
     CLIPS,
     FFMPEG,
@@ -13,13 +15,12 @@ from tests.fixtures import (
     needs_x264,
     top_boxes,
 )
-from backend.decode import _check_decodes_cleanly, _decode_stats
-from backend.h264 import _scan_mdat_for_nals
 
 
 def video_packets(path):
     """[(offset, size)] of a healthy file's video samples, from ffprobe."""
     import json
+
     from tests.fixtures import FFPROBE
 
     r = subprocess.run(

@@ -13,9 +13,9 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from tests.fixtures import CLIPS, PROJECT_DIR, FrayTestCase, drop_moov, needs_ffmpeg, needs_x264
 from backend import jobs
 from backend.server import FrameHandler
+from tests.fixtures import CLIPS, PROJECT_DIR, FrayTestCase, drop_moov, needs_ffmpeg, needs_x264
 
 
 class ServerTestCase(FrayTestCase):
@@ -145,7 +145,7 @@ class Endpoints(ServerTestCase):
 
         _, _, body = self.get("/api/recover-status")
         self.assertIn(data["job_id"], [j["id"] for j in json.loads(body)["jobs"]])
-        _, headers, body = self.get("/api/export")
+        _, _headers, body = self.get("/api/export")
         csv_text = body.decode()
         self.assertIn("clip.mp4", csv_text)
         self.assertIn("Found,Notes", csv_text.splitlines()[0])
