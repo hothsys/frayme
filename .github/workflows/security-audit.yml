@@ -1,0 +1,14 @@
+name: Security Audit
+# Daily CVE audit via the org's reusable osv-scanner workflow
+# (hothsys/.github/.github/workflows/reusable-security-audit.yml). Opens one
+# "Security audit" issue on findings and closes it when the repo scans clean.
+on:
+  schedule:
+    - cron: '12 6 * * *'  # daily, staggered across repos
+  workflow_dispatch:
+jobs:
+  audit:
+    uses: hothsys/.github/.github/workflows/reusable-security-audit.yml@v2
+    permissions:
+      contents: read
+      issues: write
