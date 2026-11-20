@@ -1,13 +1,13 @@
 """The recovery queue: jobs, the worker thread, and queue operations."""
 
+import contextlib
 import os
 import threading
 import time
 
-from .config import RECOVERY_WORKERS, VIDEO_EXTS, _ROTATIONS
+from .config import _ROTATIONS, RECOVERY_WORKERS, VIDEO_EXTS
 from .hints import _source_hints
 from .recovery import _apply_rotation, _check_output_dir, _execute_recovery, _read_rotation
-
 
 # Every job this session, by id. Queued jobs wait here in id order; there is
 # no separate queue, so cancelling a job is just removing it.
@@ -73,10 +73,8 @@ def _recovery_worker():
         except Exception as e:
             hints = None
             if os.path.splitext(job["filepath"])[1].lower() in VIDEO_EXTS - {".avi"}:
-                try:
+                with contextlib.suppress(Exception):
                     hints = _source_hints(job["filepath"])
-                except Exception:
-                    pass
             update = {"status": "failed", "error": str(e), "hints": hints}
         finally:
             with _recover_wakeup:

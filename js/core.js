@@ -25,12 +25,12 @@ async function checkFfmpeg() {
       badge.style.color = "var(--amber)";
       badge.style.borderColor = "rgba(245,166,35,.3)";
       badge.style.cursor = "pointer";
-      badge.onclick = function () {
+      badge.onclick = () => {
         document.getElementById("ffmpeg-overlay").classList.add("open");
       };
       document.getElementById("ffmpeg-overlay").classList.add("open");
     }
-  } catch (e) {
+  } catch {
     document.getElementById("ffmpeg-badge").textContent = "status error";
   }
 }
@@ -39,10 +39,10 @@ async function checkFfmpeg() {
 
 function formatSize(bytes) {
   if (!bytes || bytes === 0) return "0 B";
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
-  return (bytes / 1073741824).toFixed(2) + " GB";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
 function statusLabel(s) {
@@ -75,6 +75,6 @@ function closeStatusGuide() {
   document.getElementById("status-guide").classList.remove("open");
 }
 
-document.addEventListener("keydown", function (e) {
+document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeStatusGuide();
 });

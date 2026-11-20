@@ -1,5 +1,6 @@
 """Damage detection for each container format (check_video and friends)."""
 
+import contextlib
 import mmap
 import os
 import re
@@ -239,10 +240,8 @@ def _check_other_format(filepath, details):
                 + ". Recovery is not supported for this format.",
                 details,
             )
-        try:
+        with contextlib.suppress(ValueError):
             details["duration"] = round(float(r.stdout.decode().strip()), 2)
-        except ValueError:
-            pass
         # A readable header with no frames behind it decodes without errors
         pk = subprocess.run(
             [
@@ -388,7 +387,7 @@ def _is_heif_image(filepath, boxes, ftyp_brand):
     if ftyp_brand in HEIF_IMAGE_BRANDS:
         return True
     # Fall back to the meta box's handler: 'pict' marks a still image
-    for bt, off, sz in boxes:
+    for bt, off, _sz in boxes:
         if bt == "meta":
             with open(filepath, "rb") as f:
                 f.seek(off + 12)  # skip box header + FullBox version/flags

@@ -1,5 +1,6 @@
 """Recovery engines and the single-file recovery entry point."""
 
+import contextlib
 import json
 import os
 import struct
@@ -9,7 +10,6 @@ from pathlib import Path
 from .config import DEFAULT_OUTPUT_DIR
 from .decode import _check_decodes_cleanly, _decode_stats
 from .detect import _walk_avi
-from .findings import describe_recovery
 from .donors import (
     _collect_sps_candidates,
     _donor_files,
@@ -18,6 +18,7 @@ from .donors import (
     _get_donor_rotation,
     _most_common_rate_donor,
 )
+from .findings import describe_recovery
 from .h264 import (
     _apply_presentation_order,
     _decoding_signature,
@@ -431,10 +432,8 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None, info
                             return out_path, "raw_nal_extraction"
                 finally:
                     if os.path.exists(raw_path):
-                        try:
+                        with contextlib.suppress(OSError):
                             os.unlink(raw_path)
-                        except OSError:
-                            pass
         except Exception:
             pass
 
@@ -559,10 +558,8 @@ def recover_no_moov(filepath, donor_path, output_dir=None, data_range=None, info
             pass
         finally:
             if os.path.exists(fixed_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(fixed_path)
-                except OSError:
-                    pass
 
     # The remux failed (or there is no ffmpeg). Without ffmpeg nothing can be
     # checked; otherwise the raw transplant must decode like any other result.
@@ -644,13 +641,12 @@ def _trim_damaged_chunks(moov_data, zero_end, filepath=None):
         # Probe every chunk — build a good/bad bitmap
         good_mask = [True] * chunk_count
         if filepath and os.path.exists(filepath):
-            fh = open(filepath, "rb")
-            for i, off in enumerate(chunk_offsets):
-                fh.seek(off)
-                probe = fh.read(8)
-                if len(probe) < 8 or all(b == 0 for b in probe):
-                    good_mask[i] = False
-            fh.close()
+            with open(filepath, "rb") as fh:
+                for i, off in enumerate(chunk_offsets):
+                    fh.seek(off)
+                    probe = fh.read(8)
+                    if len(probe) < 8 or all(b == 0 for b in probe):
+                        good_mask[i] = False
         else:
             for i, off in enumerate(chunk_offsets):
                 if off < zero_end:
@@ -704,22 +700,21 @@ def _trim_damaged_chunks(moov_data, zero_end, filepath=None):
                 else:
                     ssizes = [uniform_tmp] * sc_tmp
 
-                fh = open(filepath, "rb")
-                for c in range(chunk_count):
-                    if not good_mask[c]:
-                        continue
-                    off = chunk_offsets[c]
-                    for j in range(samples_per_chunk[c]):
-                        sidx = sample_starts[c] + j
-                        if sidx >= len(ssizes):
-                            break
-                        fh.seek(off)
-                        probe = fh.read(4)
-                        if len(probe) < 4 or all(b == 0 for b in probe):
-                            good_mask[c] = False
-                            break
-                        off += ssizes[sidx]
-                fh.close()
+                with open(filepath, "rb") as fh:
+                    for c in range(chunk_count):
+                        if not good_mask[c]:
+                            continue
+                        off = chunk_offsets[c]
+                        for j in range(samples_per_chunk[c]):
+                            sidx = sample_starts[c] + j
+                            if sidx >= len(ssizes):
+                                break
+                            fh.seek(off)
+                            probe = fh.read(4)
+                            if len(probe) < 4 or all(b == 0 for b in probe):
+                                good_mask[c] = False
+                                break
+                            off += ssizes[sidx]
 
         # Keyframe-aware filtering for video tracks
         stss_loc = _find_box_in(trak_data, b"stss", trak_base)
@@ -866,7 +861,7 @@ def _trim_damaged_chunks(moov_data, zero_end, filepath=None):
             new_chunk_1idx = i + 1
             spc = samples_per_chunk[gi]
             sdi = 1
-            for fc_o, spc_o, sdi_o in stsc_entries:
+            for fc_o, _spc_o, sdi_o in stsc_entries:
                 if fc_o <= gi + 1:
                     sdi = sdi_o
             if not new_stsc or new_stsc[-1][1] != spc or new_stsc[-1][2] != sdi:
@@ -1143,7 +1138,7 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None, info=None)
 
             # Trim damaged chunks from the moov by probing actual data
             # at each chunk offset to detect scattered zero corruption.
-            moov_data, samples_trimmed = _trim_damaged_chunks(moov_data, zero_end, filepath)
+            moov_data, _samples_trimmed = _trim_damaged_chunks(moov_data, zero_end, filepath)
 
             # Find the earliest remaining stco offset across all tracks —
             # that's where valid mdat data begins in the original file.
@@ -1244,18 +1239,19 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None, info=None)
                         capture_output=True,
                         timeout=120,
                     )
-                    if result.returncode == 0 and os.path.exists(fixed_path):
-                        if os.path.getsize(fixed_path) > 1000:
-                            os.replace(fixed_path, out_path)
-                            method = "moov_recovery+ffmpeg"
+                    if (
+                        result.returncode == 0
+                        and os.path.exists(fixed_path)
+                        and os.path.getsize(fixed_path) > 1000
+                    ):
+                        os.replace(fixed_path, out_path)
+                        method = "moov_recovery+ffmpeg"
                 except Exception:
                     pass
                 finally:
                     if os.path.exists(fixed_path):
-                        try:
+                        with contextlib.suppress(OSError):
                             os.unlink(fixed_path)
-                        except OSError:
-                            pass
 
             ok, failure = _keep_if_decodes(out_path, info)
             if ok:
@@ -1375,10 +1371,8 @@ def recover_leading_zeros(filepath, donor_path=None, output_dir=None, info=None)
             pass
         finally:
             if os.path.exists(raw_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(raw_path)
-                except OSError:
-                    pass
 
     # Length-prefixed NALs (MP4-style), the usual case: the same pipeline as
     # a file missing its moov (the file's own parameter sets, donors, then
@@ -1576,10 +1570,8 @@ def _execute_recovery(filepath, donor_override="", output_dir="", rotation=None)
     # A file decoded with its own or inferred SPS/PPS didn't use the donor
     if donor_auto and "embedded" not in method and "inferred" not in method:
         resp["donor_used"] = donor_auto
-    try:
+    with contextlib.suppress(Exception):  # the row just shows less
         resp.update(describe_recovery(info, resp, rotation))
-    except Exception:
-        pass  # the row just shows less
     return resp
 
 
@@ -1608,10 +1600,8 @@ def _probe_output(path):
         data = json.loads(r.stdout or b"{}")
     except Exception:
         return out
-    try:
+    with contextlib.suppress(TypeError, ValueError):
         out["duration"] = float(data.get("format", {}).get("duration"))
-    except (TypeError, ValueError):
-        pass
     streams = data.get("streams", [])
     out["has_audio"] = any(st.get("codec_type") == "audio" for st in streams)
     video = next((st for st in streams if st.get("codec_type") == "video"), None)

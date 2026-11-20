@@ -211,8 +211,8 @@ def describe_contents_cached(filepath, details=None):
 def describe_contents(filepath, details):
     """Notes from a full scan of the media data (seconds for large files, so
     run on request): where the video is, and how much of the file it fills."""
-    from .h264 import _scan_mdat_for_nals
     from .detect import check_video
+    from .h264 import _scan_mdat_for_nals
 
     notes = []
     details = details or {}

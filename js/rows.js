@@ -17,17 +17,16 @@ function rotationSelectHtml(attr, value, title, withAuto) {
     escHtml(title) +
     '">' +
     opts
-      .map(function (o) {
-        return (
+      .map(
+        (o) =>
           '<option value="' +
           o[0] +
           '"' +
           (String(o[0]) === String(value) ? " selected" : "") +
           ">" +
           o[1] +
-          "</option>"
-        );
-      })
+          "</option>",
+      )
       .join("") +
     "</select>"
   );
@@ -61,8 +60,8 @@ var CHECK_ICON =
 
 function findIssue(filepath) {
   var found = null;
-  Object.values(folderData).forEach(function (fd) {
-    fd.issues.forEach(function (i) {
+  Object.values(folderData).forEach((fd) => {
+    fd.issues.forEach((i) => {
       if (i.filepath === filepath) found = i;
     });
   });
@@ -72,7 +71,7 @@ function findIssue(filepath) {
 function rowFindings(ev) {
   var rec = recoveredFiles[ev.filepath];
   if (rec) return { facts: rec.facts || [], notes: rec.notes || [] };
-  var f = ev.details && ev.details.findings;
+  var f = ev.details?.findings;
   return f ? { facts: f.facts || [], notes: f.notes || [] } : { facts: [], notes: [] };
 }
 
@@ -96,19 +95,13 @@ function notesListHtml(ev) {
       notes.push({ level: "pending", text: "Looking through the whole file\u2026" });
     else if (Array.isArray(extra)) notes = notes.concat(extra);
   }
-  return notes
-    .map(function (n) {
-      return '<li class="note-' + escHtml(n.level) + '">' + escHtml(n.text) + "</li>";
-    })
-    .join("");
+  return notes.map((n) => `<li class="note-${escHtml(n.level)}">${escHtml(n.text)}</li>`).join("");
 }
 
 function factsHtml(ev) {
   var f = rowFindings(ev);
   if (!f.facts.length && !f.notes.length) return "";
-  var warns = f.notes.filter(function (n) {
-    return n.level === "warn";
-  }).length;
+  var warns = f.notes.filter((n) => n.level === "warn").length;
   var open = !!openDetails[ev.filepath];
   // Most damaged files share the same warnings (no orientation, frame rate
   // or sound), so the label stays "Details". No count in the tooltip: the
@@ -133,7 +126,7 @@ function factsHtml(ev) {
   return (
     '<div class="issue-facts">' +
     (f.facts.length
-      ? '<span class="facts-text">' + f.facts.map(escHtml).join(" \u00b7 ") + "</span>"
+      ? `<span class="facts-text">${f.facts.map(escHtml).join(" \u00b7 ")}</span>`
       : "") +
     button +
     "</div>" +
@@ -163,21 +156,17 @@ function toggleRowNotes(btn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filepath: path }),
     })
-      .then(function (r) {
-        return r.json();
-      })
-      .then(function (d) {
+      .then((r) => r.json())
+      .then((d) => {
         contentNotes[path] = d.ok ? d.notes : [];
       })
-      .catch(function () {
+      .catch(() => {
         contentNotes[path] = [];
       })
-      .then(function () {
+      .then(() => {
         // The row may have been redrawn (filter, sort) while waiting
-        var link = document.querySelector(
-          '.issue-filename[data-reveal="' + CSS.escape(path) + '"]',
-        );
-        var current = link && link.closest(".issue-info").querySelector(".row-notes");
+        var link = document.querySelector(`.issue-filename[data-reveal="${CSS.escape(path)}"]`);
+        var current = link?.closest(".issue-info").querySelector(".row-notes");
         if (current && openDetails[path]) current.innerHTML = notesListHtml(ev);
       });
   }
@@ -211,22 +200,22 @@ function recoveredLineHtml(rec) {
       formatSize(rec.size) +
         " of " +
         formatSize(rec.original_size) +
-        (rec.recovery_pct != null ? " (" + rec.recovery_pct + "%)" : ""),
+        (rec.recovery_pct != null ? ` (${rec.recovery_pct}%)` : ""),
     );
   } else {
     bits.push(formatSize(rec.size));
   }
   bits.push(escHtml(rec.method || ""));
-  if (rec.donor_used) bits.push("donor " + escHtml(rec.donor_used.split("/").pop()));
+  if (rec.donor_used) bits.push(`donor ${escHtml(rec.donor_used.split("/").pop())}`);
   var line = bits.join(" · ");
   if (rec.video_only) line += ' · <span class="rr-warn">no audio</span>';
-  return '<div class="recovered-line">' + line + "</div>";
+  return `<div class="recovered-line">${line}</div>`;
 }
 
 function buildIssueRowHtml(ev) {
   var rec = recoveredFiles[ev.filepath];
-  var dotClass = rec ? "dot-recovered" : "dot-" + ev.status;
-  var badgeClass = rec ? "badge-recovered" : "badge-" + ev.status;
+  var dotClass = rec ? "dot-recovered" : `dot-${ev.status}`;
+  var badgeClass = rec ? "badge-recovered" : `badge-${ev.status}`;
   var badgeText = rec ? "RECOVERED" : statusLabel(ev.status);
 
   var reason = "";
@@ -247,12 +236,11 @@ function buildIssueRowHtml(ev) {
       );
     }
   } else {
-    reason = '<div class="issue-reason">' + escHtml(ev.reason || "") + "</div>";
+    reason = `<div class="issue-reason">${escHtml(ev.reason || "")}</div>`;
     var canRecover =
-      ((ev.status === "no_moov" || ev.status === "corrupt") &&
-        !(ev.details && ev.details.unrecoverable)) ||
-      !!(ev.details && ev.details.salvageable);
-    var intactCopy = ev.details && ev.details.intact_copy;
+      ((ev.status === "no_moov" || ev.status === "corrupt") && !ev.details?.unrecoverable) ||
+      !!ev.details?.salvageable;
+    var intactCopy = ev.details?.intact_copy;
     actions =
       (intactCopy
         ? '<button class="row-btn" data-reveal="' +
@@ -261,7 +249,7 @@ function buildIssueRowHtml(ev) {
         : "") +
       (canRecover
         ? rotationSelectHtml(
-            'data-rotation-for="' + escHtml(ev.filepath) + '"',
+            `data-rotation-for="${escHtml(ev.filepath)}"`,
             rotationChoice[ev.filepath] === undefined ? "" : rotationChoice[ev.filepath],
             "Rotation for the recovered video (Auto: from a matching donor)",
             true,
@@ -285,7 +273,7 @@ function buildIssueRowHtml(ev) {
     "</button>";
 
   var meta =
-    (ev.duration != null ? durationText(ev.duration) + " · " : "") + formatSize(ev.file_size);
+    (ev.duration != null ? `${durationText(ev.duration)} · ` : "") + formatSize(ev.file_size);
 
   return (
     '<div class="issue-row">' +
@@ -318,7 +306,7 @@ function buildIssueRowHtml(ev) {
 }
 
 function appendIssueRow(dir, ev) {
-  var id = "fg-" + CSS.escape(dir);
+  var id = `fg-${CSS.escape(dir)}`;
   var group = document.getElementById(id);
   if (!group) return;
   var body = group.querySelector(".folder-body");

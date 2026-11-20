@@ -3,9 +3,9 @@
 // ── Click handlers ──
 
 // Cancel a queued recovery and put its row's button back to Recover
-document.addEventListener("change", function (e) {
+document.addEventListener("change", (e) => {
   var sel = e.target;
-  if (!sel.classList || !sel.classList.contains("rotation-select")) return;
+  if (!sel.classList?.contains("rotation-select")) return;
   if (sel.hasAttribute("data-rotation-for")) {
     var path = sel.getAttribute("data-rotation-for");
     if (sel.value === "") delete rotationChoice[path];
@@ -14,17 +14,15 @@ document.addEventListener("change", function (e) {
   }
   var output = sel.getAttribute("data-rotate-output");
   var source = sel.getAttribute("data-rotate-for");
-  var previous = String((recoveredFiles[source] || {}).rotation || 0);
+  var previous = String(recoveredFiles[source]?.rotation || 0);
   sel.disabled = true;
   fetch("/api/rotate-output", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ output: output, rotation: Number(sel.value) }),
   })
-    .then(function (r) {
-      return r.json();
-    })
-    .then(function (d) {
+    .then((r) => r.json())
+    .then((d) => {
       sel.disabled = false;
       if (d.ok) {
         if (recoveredFiles[source]) recoveredFiles[source].rotation = d.rotation;
@@ -33,14 +31,14 @@ document.addEventListener("change", function (e) {
         alert(d.error || "Could not change the rotation.");
       }
     })
-    .catch(function (err) {
+    .catch((err) => {
       sel.disabled = false;
       sel.value = previous;
       console.error("Changing rotation failed:", err);
     });
 });
 
-document.addEventListener("click", function (e) {
+document.addEventListener("click", (e) => {
   var cancelTarget = e.target.closest("[data-cancel-job]");
   if (cancelTarget) {
     e.preventDefault();
@@ -59,11 +57,11 @@ document.addEventListener("click", function (e) {
   if (copyTarget) {
     e.preventDefault();
     var path = copyTarget.getAttribute("data-copy");
-    navigator.clipboard.writeText(path).then(function () {
+    navigator.clipboard.writeText(path).then(() => {
       // A check mark for a moment, then the copy icon again
       copyTarget.innerHTML = CHECK_ICON;
       copyTarget.classList.add("copied");
-      setTimeout(function () {
+      setTimeout(() => {
         copyTarget.innerHTML = COPY_ICON;
         copyTarget.classList.remove("copied");
       }, 1200);
@@ -124,4 +122,4 @@ try {
     document.getElementById("dir-input").value = savedDir;
     watchMount(savedDir);
   }
-} catch (e) {}
+} catch {}

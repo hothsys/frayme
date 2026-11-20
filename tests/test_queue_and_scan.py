@@ -6,9 +6,9 @@ import time
 import unittest
 from unittest import mock
 
-from tests.fixtures import CLIPS, FrayTestCase, drop_moov, needs_ffmpeg, needs_x264, zero_head
 from backend import jobs, state
 from backend.scan import scan_directory_gen
+from tests.fixtures import CLIPS, FrayTestCase, drop_moov, needs_ffmpeg, needs_x264, zero_head
 
 
 def wait_for(job_id, timeout=120):

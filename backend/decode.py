@@ -18,9 +18,16 @@ def _decode_stats(input_args, timeout, count_errors=True):
     file that decodes nothing has no errors.
     """
     result = subprocess.run(
-        [_ffmpeg_path, "-hide_banner", "-loglevel", "level+info"]
-        + input_args
-        + ["-f", "null", "-"],
+        [
+            _ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "level+info",
+            *input_args,
+            "-f",
+            "null",
+            "-",
+        ],
         capture_output=True,
         timeout=timeout,
     )

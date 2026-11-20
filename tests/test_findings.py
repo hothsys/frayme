@@ -6,6 +6,10 @@ import random
 import struct
 import unittest
 
+from backend.detect import check_video
+from backend.findings import describe_contents, describe_damaged
+from backend.recovery import _execute_recovery
+from backend.scan import scan_directory_gen
 from tests.fixtures import (
     CLIPS,
     FrayTestCase,
@@ -18,10 +22,6 @@ from tests.fixtures import (
     top_boxes,
     zero_head,
 )
-from backend.findings import describe_contents, describe_damaged
-from backend.detect import check_video
-from backend.recovery import _execute_recovery
-from backend.scan import scan_directory_gen
 
 
 def texts(findings, level=None):

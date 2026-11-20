@@ -31,7 +31,7 @@ async function saveScan() {
     const dir = document.getElementById("dir-input").value.trim();
 
     const scanned =
-      parseInt(document.getElementById("s-scanned").textContent.replace(/,/g, "")) || 0;
+      parseInt(document.getElementById("s-scanned").textContent.replace(/,/g, ""), 10) || 0;
 
     const tx1 = db.transaction(DB_STORE, "readwrite");
     await idbReq(tx1.objectStore(DB_STORE).put({ ts, dir, folderData, scanned }, ts));
@@ -44,7 +44,7 @@ async function saveScan() {
 
     const scans = await loadSavedScans();
     populateScanDropdown(scans, ts);
-  } catch (e) {}
+  } catch {}
 }
 
 async function loadSavedScans() {
@@ -52,7 +52,7 @@ async function loadSavedScans() {
     const db = await openDB();
     const all = await idbReq(db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).getAll());
     return all.sort((a, b) => b.ts - a.ts);
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -61,7 +61,7 @@ async function loadScan(ts) {
   try {
     const db = await openDB();
     return await idbReq(db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(ts));
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -70,22 +70,26 @@ async function clearAllScans() {
   try {
     const db = await openDB();
     await idbReq(db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).clear());
-  } catch (e) {}
+  } catch {}
   document.getElementById("prev-scans-row").style.display = "none";
-  Object.keys(folderData).forEach((k) => delete folderData[k]);
+  Object.keys(folderData).forEach((k) => {
+    delete folderData[k];
+  });
   document.getElementById("folder-list").innerHTML = "";
   hideScanResults();
 }
 
 async function loadSelectedScan(sel) {
-  const ts = parseInt(sel.value);
+  const ts = parseInt(sel.value, 10);
   if (!ts) return;
   const saved = await loadScan(ts);
   if (!saved) {
     alert("Could not load this scan. It may have been cleared. Try rescanning.");
     return;
   }
-  Object.keys(folderData).forEach((k) => delete folderData[k]);
+  Object.keys(folderData).forEach((k) => {
+    delete folderData[k];
+  });
   document.getElementById("folder-list").innerHTML = "";
   hideScanResults();
   restoreScan(saved);
@@ -132,8 +136,8 @@ function populateScanDropdown(scans, selectTs) {
       const opt = document.createElement("option");
       opt.value = scan.ts;
       const parts = (scan.dir || "").split("/").filter(Boolean);
-      const short = parts.length > 2 ? "…/" + parts.slice(-2).join("/") : scan.dir || "";
-      opt.textContent = when(scan.ts) + (short ? " · " + short : "");
+      const short = parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : scan.dir || "";
+      opt.textContent = when(scan.ts) + (short ? ` · ${short}` : "");
       opt.title = scan.dir || "";
       sel.appendChild(opt);
     });
