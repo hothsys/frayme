@@ -112,8 +112,9 @@ def run(input_dir, output_dir, donor_dir=None, scan_only=False, report=print):
         report(error)
         return 2, []
 
-    todo = [e for e in issues if can_recover(e["status"], e["details"])]
-    skipped = [e for e in issues if e not in todo]
+    todo, skipped = [], []
+    for e in issues:
+        (todo if can_recover(e["status"], e["details"]) else skipped).append(e)
     report(f"Found {len(issues)} damaged files, {len(todo)} can be recovered.")
     for e in skipped:
         report(f"  skip     {os.path.relpath(e['filepath'], input_dir)} ({e['status']})")
