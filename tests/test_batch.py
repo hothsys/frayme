@@ -128,6 +128,13 @@ class BatchRecovery(FrayTestCase):
             2,
         )
 
+    def test_no_output_folder_exits_2_when_there_is_work(self):
+        drop_moov(CLIPS.get("base"), os.path.join(self.src_dir, "clip.mp4"))
+        log = []
+        code, results = run(self.src_dir, None, report=log.append)
+        self.assertEqual((code, results), (2, []))
+        self.assertTrue(any("output folder" in line.lower() for line in log), log)
+
 
 class CommandLine(unittest.TestCase):
     def test_output_is_required_without_scan_only(self):

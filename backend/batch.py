@@ -127,15 +127,17 @@ def run(input_dir, output_dir, donor_dir=None, scan_only=False, report=print):
     if not todo:
         return 0, []
 
-    if output_dir:
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except OSError as e:
-            report(f"Output folder cannot be created: {e}")
-            return 2, []
-        if not os.access(output_dir, os.W_OK):
-            report(f"Output folder is not writable: {output_dir}")
-            return 2, []
+    if not output_dir:
+        report("An output folder is required to recover files.")
+        return 2, []
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        report(f"Output folder cannot be created: {e}")
+        return 2, []
+    if not os.access(output_dir, os.W_OK):
+        report(f"Output folder is not writable: {output_dir}")
+        return 2, []
 
     if donor_dir:
         donors = find_donors(donor_dir)
