@@ -1,0 +1,37 @@
+name: PR Agent Review
+
+# Pilot: free AI code review when a PR opens, using OpenRouter free models only.
+# Review-only (no auto describe/improve) to stay within the free 50-requests/day
+# OpenRouter budget, which is shared with the PR Summary workflow.
+# pull_request (not pull_request_target): GitHub withholds secrets and write
+# access from fork PRs, so fork PRs are skipped until we decide otherwise.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    # Skip bot-authored PRs (e.g. dependabot); ordinary user accounts pass.
+    if: ${{ github.event.sender.type != 'Bot' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Run PR-Agent review
+        uses: the-pr-agent/pr-agent@v0.50.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same OpenRouter key the PR Summary workflow uses.
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Free models only: the openrouter/free router picks an available free
+          # model, and the empty fallback list blocks any paid-model fallback.
+          CONFIG.MODEL: "openrouter/free"
+          CONFIG.FALLBACK_MODELS: "[]"
+          GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
+          GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"
+          GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
