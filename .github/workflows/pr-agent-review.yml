@@ -37,3 +37,7 @@ jobs:
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
+          # Org rule: no labels on agent-authored PRs; disable PR-Agent's
+          # review labels (security + effort).
+          PR_REVIEWER.ENABLE_REVIEW_LABELS_SECURITY: "false"
+          PR_REVIEWER.ENABLE_REVIEW_LABELS_EFFORT: "false"
