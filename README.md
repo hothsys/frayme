@@ -96,6 +96,25 @@ Leave the window open while you use Frayme, and press **Ctrl+C** in it to stop. 
 4. Once the scan finishes, click **Recover** on any file, and Frayme auto-selects a compatible donor from healthy files found during the scan. Recovered videos are saved to the folder shown next to **Save recovered to** (your Downloads folder unless you pick another with **Browse**; **Show** opens it). Clicking a finished job in the Recovery Queue shows its file in Finder. Damaged files lose their rotation, so each row has a rotation picker: **Auto** copies it from a matching donor, or pick one before recovering; on a recovered row, changing it rewrites the recovered file's rotation right away. Recoveries run two at a time in the **Recovery Queue** panel (bottom right), which shows each job's progress; **Clear Done** removes finished and failed jobs, and is greyed out until something has finished. If a recovery fails, the row shows the reason and the button changes to **Retry**
 5. Export results to CSV at any time; it includes what Frayme found about each file
 
+## Command Line
+
+To recover a whole folder without the browser:
+
+```sh
+python3 frayme_cli.py --input ~/damaged --output ~/recovered
+python3 frayme_cli.py --input ~/damaged --output ~/recovered --donors ~/healthy
+python3 frayme_cli.py --input ~/damaged --scan-only
+```
+
+| Option | Meaning |
+|--------|---------|
+| `--input` | Folder to scan, including subfolders (required) |
+| `--output` | Folder for recovered videos (required unless `--scan-only`). Subfolders of the input are mirrored under it, so files with the same name in different folders do not collide. It is created if missing |
+| `--donors` | Folder of healthy videos from the same camera, like **Choose Donor** in the app |
+| `--scan-only` | List what would be recovered and change nothing |
+
+It scans the way the app does and recovers every file the app would offer **Recover** for, two at a time. Each result is decode-tested like the app's, and one line per file is printed with a summary. Your originals are never changed. A recovered file is named `<name>_recovered<ext>`; running again overwrites earlier results in the output folder. The exit status is 0 when nothing failed, 1 when a recovery failed, and 2 when a folder could not be used. It needs the same FFmpeg as the app, and no server is started.
+
 ## How Recovery Works
 
 ### Raw NAL Extraction (Primary Strategy)
@@ -130,6 +149,7 @@ Every result, from any strategy, must pass the same decode test, so a file that 
 ```
 frayme/
   app.py            # Entry point: starts the server
+  frayme_cli.py     # Command line: recover a whole folder (see Command Line)
   backend/          # Server, scanner, and recovery engine (Python standard library only)
   index.html        # Web UI
   logo.svg          # App logo (source for all icons)
@@ -164,6 +184,7 @@ It needs FFmpeg built with libx264 (Homebrew's is); HEVC tests also use libx265 
 | `test_queue_and_scan.py` | The scan generator and the recovery queue (jobs, cancel, rotation, failures) |
 | `test_server.py` | The HTTP server: static files, JSON endpoints, the scan event stream |
 | `test_engine.py` | The decode check and the NAL scanner |
+| `test_batch.py` | The command line (batch recovery, output layout, donors, scan-only) and a check that its recoverable rule matches `canRecover` in `js/rows.js` |
 
 Known limitations are kept as expected failures, so they show up as an "unexpected success" once fixed.
 
