@@ -4,7 +4,8 @@ name: PR Agent Review
 # Review-only (no auto describe/improve) to stay within the free 50-requests/day
 # OpenRouter budget, which is shared with the PR Summary workflow.
 # pull_request (not pull_request_target): GitHub withholds secrets and write
-# access from fork PRs, so fork PRs are skipped until we decide otherwise.
+# access from fork PRs, and the job guard below skips them explicitly until we
+# choose pull_request_target deliberately.
 on:
   pull_request:
     types: [opened, reopened, ready_for_review]
@@ -14,8 +15,9 @@ permissions:
 
 jobs:
   review:
-    # Skip bot-authored PRs (e.g. dependabot); ordinary user accounts pass.
-    if: ${{ github.event.sender.type != 'Bot' }}
+    # Skip bot-authored PRs (e.g. dependabot) and fork PRs (no secrets,
+    # read-only token); collaborator branches from ordinary user accounts pass.
+    if: ${{ github.event.sender.type != 'Bot' && github.event.pull_request.head.repo.fork == false }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
