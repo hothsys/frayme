@@ -4,7 +4,7 @@
 
 <h1 align="center">Frayme</h1>
 
-A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.
+<p align="center">A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.</p>
 
 ## Quick Start
 
