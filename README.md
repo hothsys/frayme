@@ -27,6 +27,7 @@ Full documentation lives in the [`docs/`](docs/) folder:
 | [Usage](docs/usage.md) | Scanning, statuses, recovering, the Recovery Queue, CSV export |
 | [Command line](docs/command-line.md) | Recovering a whole folder without the browser |
 | [Recovery](docs/recovery.md) | How recovery works and its limitations |
+| [Logging](docs/logging.md) | Where the log file is, how to set the log level, and what is logged |
 | [Development](docs/development.md) | Project structure and the test suite |
 
 ## License
