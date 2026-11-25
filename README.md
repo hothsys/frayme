@@ -1,4 +1,8 @@
-# <img src="logo.svg" width="100" valign="middle" hspace="10" vspace="4"/>Frayme
+<p align="center">
+  <img src="logo.svg" alt="Frayme logo" width="280">
+</p>
+
+<h1 align="center">Frayme</h1>
 
 A web-based tool that recursively scans directories for corrupted video files and offers best-effort recovery.
 
