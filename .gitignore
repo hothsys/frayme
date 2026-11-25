@@ -7,7 +7,6 @@ __pycache__/
 *.log.*
 
 # frayme.sh
-.frayme.log
 .frayme.pid
 .frayme.port
 

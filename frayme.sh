@@ -12,7 +12,13 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$APP_DIR/.frayme.pid"
 PORT_FILE="$APP_DIR/.frayme.port"
-LOG_FILE="$APP_DIR/.frayme.log"
+# Log file in the OS standard location (see docs/logging.md). The app itself
+# writes it with rotation; the shell no longer redirects stdout there.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  LOG_FILE="$HOME/Library/Logs/Frayme/app.log"
+else
+  LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/Frayme/app.log"
+fi
 DEFAULT_PORT=5901
 
 running_pid() {
@@ -57,7 +63,9 @@ start() {
     echo "Warning: ffmpeg not found on PATH; recovery will not work (brew install ffmpeg)." >&2
   fi
 
-  nohup python3 -u "$APP_DIR/app.py" "$port" >"$LOG_FILE" 2>&1 &
+  # The app writes its own rotating log file; stdout and stderr here are
+  # discarded so nothing else writes to that file.
+  nohup python3 -u "$APP_DIR/app.py" "$port" >/dev/null 2>&1 &
   echo $! >"$PID_FILE"
   echo "$port" >"$PORT_FILE"
 
@@ -69,7 +77,7 @@ start() {
     fi
     if ! running_pid >/dev/null; then
       echo "Frayme failed to start. Last log lines:" >&2
-      tail -n 20 "$LOG_FILE" >&2
+      tail -n 20 "$LOG_FILE" 2>/dev/null >&2 || echo "(no log file yet)" >&2
       return 1
     fi
     sleep 0.25
@@ -111,7 +119,7 @@ case "${1:-}" in
   stop)    stop ;;
   restart) stop; start "${2:-}" ;;
   status)  status ;;
-  logs)    touch "$LOG_FILE"; tail -f "$LOG_FILE" ;;
+  logs)    mkdir -p "$(dirname "$LOG_FILE")"; touch "$LOG_FILE"; tail -f "$LOG_FILE" ;;
   *)
     echo "Usage: $0 {start [port]|stop|restart [port]|status|logs}" >&2
     exit 1
