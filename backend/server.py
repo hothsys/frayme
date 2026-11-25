@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -408,4 +409,12 @@ class FrameHandler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "cleared": clear_finished()})
 
     def log_message(self, format, *args):
-        pass  # Suppress default access log noise
+        # Request lines go to the log file, not stderr. Only the method and
+        # the path are logged, never the query string or user text in it.
+        logging.getLogger("frayme.http").info("%s %s", self.command, urlparse(self.path).path)
+
+    def log_error(self, format, *args):
+        # BaseHTTPRequestHandler routes errors through log_message by
+        # default, which would log the request line a second time. Log the
+        # error itself instead, at error level.
+        logging.getLogger("frayme.http").error(format % args)

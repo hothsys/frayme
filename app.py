@@ -9,17 +9,23 @@ Offers best-effort recovery via moov transplant and raw stream extraction.
 Entry point. The application itself lives in backend/.
 """
 
+import logging
 import sys
 import threading
 import webbrowser
 from http.server import ThreadingHTTPServer
 
+from backend.log import setup_logging
 from backend.server import FrameHandler
+
+logger = logging.getLogger("frayme")
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5901
+    log_file = setup_logging()
+    logger.info("Frayme started at http://localhost:%s (log: %s)", port, log_file)
     print()
     print("╔══════════════════════════════════════════════╗")
     print("║              Frayme                           ║")
@@ -32,5 +38,6 @@ if __name__ == "__main__":
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        logger.info("Shutting down.")
         print("\nShutting down.")
         server.server_close()
