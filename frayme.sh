@@ -13,12 +13,14 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$APP_DIR/.frayme.pid"
 PORT_FILE="$APP_DIR/.frayme.port"
 # Log file in the OS standard location (see docs/logging.md). The app itself
-# writes it with rotation; the shell no longer redirects stdout there.
+# writes it with rotation. Startup output (anything printed before logging
+# is set up) goes to a separate file next to it, truncated on each start.
 if [[ "$(uname -s)" == "Darwin" ]]; then
   LOG_FILE="$HOME/Library/Logs/Frayme/app.log"
 else
   LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/Frayme/app.log"
 fi
+STARTUP_LOG="$(dirname "$LOG_FILE")/startup.log"
 DEFAULT_PORT=5901
 
 running_pid() {
@@ -63,9 +65,11 @@ start() {
     echo "Warning: ffmpeg not found on PATH; recovery will not work (brew install ffmpeg)." >&2
   fi
 
-  # The app writes its own rotating log file; stdout and stderr here are
-  # discarded so nothing else writes to that file.
-  nohup python3 -u "$APP_DIR/app.py" "$port" >/dev/null 2>&1 &
+  # The app writes its own rotating log file, so stdout and stderr go to
+  # the startup log instead, truncated on each start. That keeps a single
+  # writer on app.log while startup failures still leave a traceback.
+  mkdir -p "$(dirname "$LOG_FILE")"
+  nohup python3 -u "$APP_DIR/app.py" "$port" >"$STARTUP_LOG" 2>&1 &
   echo $! >"$PID_FILE"
   echo "$port" >"$PORT_FILE"
 
@@ -77,7 +81,9 @@ start() {
     fi
     if ! running_pid >/dev/null; then
       echo "Frayme failed to start. Last log lines:" >&2
-      tail -n 20 "$LOG_FILE" 2>/dev/null >&2 || echo "(no log file yet)" >&2
+      tail -n 20 "$LOG_FILE" >&2 2>/dev/null || echo "(no log file yet)" >&2
+      echo "Startup output:" >&2
+      tail -n 20 "$STARTUP_LOG" >&2 2>/dev/null || echo "(no startup log yet)" >&2
       return 1
     fi
     sleep 0.25
@@ -119,7 +125,7 @@ case "${1:-}" in
   stop)    stop ;;
   restart) stop; start "${2:-}" ;;
   status)  status ;;
-  logs)    mkdir -p "$(dirname "$LOG_FILE")"; touch "$LOG_FILE"; tail -f "$LOG_FILE" ;;
+  logs)    mkdir -p "$(dirname "$LOG_FILE")"; touch "$LOG_FILE"; tail -F "$LOG_FILE" ;;
   *)
     echo "Usage: $0 {start [port]|stop|restart [port]|status|logs}" >&2
     exit 1

@@ -28,6 +28,11 @@ Startup and shutdown, HTTP request lines (method and path only, never the
 query string), and uncaught errors with their tracebacks. File contents,
 edited text, and PII values are never logged.
 
+Anything printed before logging is set up (for example a traceback from a
+failed import) goes to `startup.log` next to `app.log` instead. That file
+is truncated on each start, and `./frayme.sh start` shows its last lines
+when the server fails to start.
+
 ## Reading the log
 
 ```sh
