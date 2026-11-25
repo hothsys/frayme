@@ -411,9 +411,7 @@ class FrameHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Request lines go to the log file, not stderr. Only the method and
         # the path are logged, never the query string or user text in it.
-        logging.getLogger("frayme.http").info(
-            "%s %s", self.command, urlparse(self.path).path
-        )
+        logging.getLogger("frayme.http").info("%s %s", self.command, urlparse(self.path).path)
 
     def log_error(self, format, *args):
         # BaseHTTPRequestHandler routes errors through log_message by
