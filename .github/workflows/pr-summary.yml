@@ -15,7 +15,7 @@ on:
         required: true
 jobs:
   summary:
-    uses: hothsys/.github/.github/workflows/reusable-pr-summary.yml@v1
+    uses: hothsys/.github/.github/workflows/reusable-pr-summary.yml@v2
     # The shared workflow can't have more permissions than its caller grants.
     permissions:
       pull-requests: write
