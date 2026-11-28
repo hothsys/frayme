@@ -1,43 +1,24 @@
 name: PR Agent Review
-
-# Pilot: free AI code review when a PR opens, using OpenRouter free models only.
-# Review-only (no auto describe/improve) to stay within the free 50-requests/day
-# OpenRouter budget, which is shared with the PR Summary workflow.
-# pull_request (not pull_request_target): GitHub withholds secrets and write
-# access from fork PRs, and the job guard below skips them explicitly until we
-# choose pull_request_target deliberately.
+# Calls the org's shared AI code-review workflow in hothsys/.github
+# (.github#34). Review only, free OpenRouter models only. A PR whose changed
+# files are all docs or repo config is skipped at zero OpenRouter cost, and
+# each push gets an incremental review of just the new commits (synchronize
+# is in the trigger types for that).
+#
+# pull_request (not pull_request_target): GitHub itself withholds secrets and
+# write access from fork PRs, and the reusable skips bot-authored and fork
+# PRs explicitly. The dedicated OPENROUTER_PR_AGENT_KEY org secret flows in
+# via secrets: inherit.
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
-
-permissions:
-  contents: read
+    types: [opened, reopened, ready_for_review, synchronize]
 
 jobs:
   review:
-    # Skip bot-authored PRs (e.g. dependabot) and fork PRs (no secrets,
-    # read-only token); collaborator branches from ordinary user accounts pass.
-    if: ${{ github.event.sender.type != 'Bot' && github.event.pull_request.head.repo.fork == false }}
-    runs-on: ubuntu-latest
+    uses: hothsys/.github/.github/workflows/reusable-pr-agent.yml@v2
+    # The shared workflow can't have more permissions than its caller grants.
     permissions:
       contents: read
       issues: write
       pull-requests: write
-    steps:
-      - name: Run PR-Agent review
-        uses: the-pr-agent/pr-agent@v0.50.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Same OpenRouter key the PR Summary workflow uses.
-          OPENROUTER__KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Free models only: the openrouter/free router picks an available free
-          # model, and the empty fallback list blocks any paid-model fallback.
-          CONFIG.MODEL: "openrouter/free"
-          CONFIG.FALLBACK_MODELS: "[]"
-          GITHUB_ACTION_CONFIG.AUTO_REVIEW: "true"
-          GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: "false"
-          GITHUB_ACTION_CONFIG.AUTO_IMPROVE: "false"
-          # Org rule: no labels on agent-authored PRs; disable PR-Agent's
-          # review labels (security + effort).
-          PR_REVIEWER.ENABLE_REVIEW_LABELS_SECURITY: "false"
-          PR_REVIEWER.ENABLE_REVIEW_LABELS_EFFORT: "false"
+    secrets: inherit
